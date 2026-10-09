@@ -120,21 +120,17 @@ define Device/hinlink_opc-h68k-c
 endef
 TARGET_DEVICES += hinlink_opc-h68k-c
 
-define Device/hinlink_opc-h68k-c-usb
+# ★ 2022 C/D/F 的 USB3.0 变体与 2022.8 的 c-usb3 改型，硬件配置完全相同
+#   （都是把 SATA 口改成 USB 3.0），已合并为一份 DTS，用两个 compatible 区分：
+#     hinlink,opc-h68k-c-usb    2022 C/D/F 的 USB3.0 变体
+#     hinlink,opc-h68k-c-usb3   2022.8 的 c-usb3 改型
+#   两者 02_network 映射本来就一致（LAN eth0 eth2 eth3 / WAN eth1）。
+define Device/hinlink_opc-h68k-c-usb3
   $(Device/hinlink_h6xk_m2_wifi)
-  DEVICE_MODEL := OPC-H68K c (2022, USB3.0)
-  DEVICE_DTS := rk3568-hinlink-h68k-c-usb
+  DEVICE_MODEL := OPC-H68K c (2022/2022.8, USB3.0)
+  DEVICE_DTS := rk3568-hinlink-h68k-c-usb3
   UBOOT_DEVICE_NAME := hinlink-h68k-rk3568
   DEVICE_PACKAGES += kmod-r8169
-endef
-TARGET_DEVICES += hinlink_opc-h68k-c-usb
-
-# ---- H68K 老机器：c-usb3（2022.8，本身即USB3.0 改型，不再拆）----
-
-define Device/hinlink_opc-h68k-c-usb3
-  $(Device/hinlink_opc-h68k-c-usb)
-  DEVICE_MODEL := OPC-H68K c-usb3 (2022.8, USB3.0)
-  DEVICE_DTS := rk3568-hinlink-h68k-c-usb3
 endef
 TARGET_DEVICES += hinlink_opc-h68k-c-usb3
 

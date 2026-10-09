@@ -41,14 +41,8 @@ hinlink,opc-h68k-a|\
 
 hinlink,opc-h68k-c|\
 	hinlink,opc-h68k-c-usb|\
+	hinlink,opc-h68k-c-usb3|\
 	linkstar,opc-h68k-c)
-		ucidef_set_interfaces_lan_wan 'eth0 eth2 eth3' 'eth1'
-		;;
-
-
-# ---- H68K C USB3：2022 四网口 + USB3 ----
-
-hinlink,opc-h68k-c-usb3)
 		ucidef_set_interfaces_lan_wan 'eth0 eth2 eth3' 'eth1'
 		;;
 

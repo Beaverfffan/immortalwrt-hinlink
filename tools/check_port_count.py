@@ -35,7 +35,8 @@ EXPECT = {
     'rk3568-hinlink-h68k-a':      2,  # 2022 双千兆，2xGMAC，无 PCIe
     'rk3568-hinlink-h68k-a-usb':  2,
     'rk3568-hinlink-h68k-c':      4,  # 2xGMAC + 2xRTL8125
-    'rk3568-hinlink-h68k-c-usb':  4,
+    # ★ h68k-c-usb 与 h68k-c-usb3 硬件配置完全相同，已合并为一份 DTS，
+    #   用两个 compatible 区分（2022 C/D/F 的 USB3.0 变体 / 2022.8 的 c-usb3 改型）。
     'rk3568-hinlink-h68k-c-usb3': 4,
     'rk3568-hinlink-h68k-d':      4,
     'rk3568-hinlink-h68k-d-usb':  4,

@@ -4,7 +4,7 @@ HinLink（芯联）全系列路由器在 immortalwrt 上的设备树与板级配
 **按硬件变体一机一档，不做运行时自适应探测** —— 每个 `compatible` 对应一份独立
 DTS，`02_network` 里 `ethN` 映射写死。
 
-- **19 个机型** · 20 份 DTS · 7 份 dtsi · 4 份内核 patch · 5 个工具脚本 · 3 份厂商 dtb
+- **18 个机型** · 19 份 DTS · 7 份 dtsi · 4 份内核 patch · 6 个工具脚本 · 3 份厂商 dtb
 - 覆盖 RK3568（H66K / H68K / H69K）、RK3528（H28K / H29K / HT2）、RK3588（H88K / **H89K**）
 
 > 本仓库是**支线仓库**，只提供补丁文件，不含完整 OpenWrt 源码。
@@ -53,7 +53,7 @@ python3 tools/dts_syntax_check.py <dts> <include-dirs...>   # DTS 结构
 
 ## 二、机型矩阵
 
-### RK3568 — H66K / H68K / H69K（11 个机型）
+### RK3568 — H66K / H68K / H69K（10 个机型）
 
 | 机型 | 年份/定位 | 口数 | 网络构成 | 板载 WiFi | 存储口 |
 |---|---|---|---|---|---|
@@ -61,8 +61,7 @@ python3 tools/dts_syntax_check.py <dts> <include-dirs...>   # DTS 结构
 | **h68k-a** | 2022 双千兆 | 2 | 2×GMAC | AP6256 | **SATA** |
 | h68k-a-usb | 同上 | 2 | 2×GMAC | AP6256 | USB3.0 |
 | **h68k-c** | 2022 四网口 | 4 | 2×GMAC + 2×RTL8125 | M.2 | **SATA** |
-| h68k-c-usb | 同上 | 4 | 2×GMAC + 2×RTL8125 | M.2 | USB3.0 |
-| **h68k-c-usb3** | 2022.8 USB3.0 改型 | 4 | 2×GMAC + 2×RTL8125 | M.2 | USB3.0 |
+| **h68k-c-usb3** | 2022/2022.8 USB3.0 改型 | 4 | 2×GMAC + 2×RTL8125 | M.2 | USB3.0 |
 | **h68k-d** | 2023.4 推荐版 | 4 | 2×GMAC + 2×RTL8125 | M.2 | **SATA** |
 | h68k-d-usb | 同上 | 4 | 2×GMAC + 2×RTL8125 | M.2 | USB3.0 |
 | **h68k-new** | 2023末~2024 | 4 | 2×GMAC + 2×RTL8125 | AIC8800 | USB3 + SATA |
@@ -70,6 +69,23 @@ python3 tools/dts_syntax_check.py <dts> <include-dirs...>   # DTS 结构
 | **h69k-mini** | = **H68K max** | **4** | 2×GMAC + 2×RTL8125 | AIC8800 | USB3 + SATA |
 
 **命名约定**（OpenWrt / lede / iStoreOS 互认）：**无后缀 = SATA，`-usb` = USB3.0**。
+
+> ★ **已合并的重复机型**：`h68k-c-usb`（2022 C/D/F 的 USB3.0 变体）与
+> `h68k-c-usb3`（2022.8 的 c-usb3 改型）—— 两者 DTS 硬件配置完全相同，
+> 都是「C/D/F 基础上把 SATA 口改成 USB 3.0」，且 `02_network` 映射一致。
+> 现合并为一份 `rk3568-hinlink-h68k-c-usb3.dts`，用两个 compatible 区分：
+> `hinlink,opc-h68k-c-usb3` 与 `hinlink,opc-h68k-c-usb`。
+>
+> ★ **刻意不合并的重复**：`h68k-c` / `h68k-d`、`h68k-c-usb3` / `h68k-d-usb`
+> 这两组的 DTS 硬件配置也完全相同，但 **WAN 口位置不同**：
+>
+> ```
+> c 系（2022）  LAN eth0 eth2 eth3 / WAN eth1
+> d 系（2023.4）LAN eth1 eth2 eth3 / WAN eth0
+> ```
+>
+> 厂商确实当两个机型卖，WAN 插在不同的物理口上 —— 属实质硬件差异，
+> 合并会导致其中一代机器的 WAN 接错口。**保持独立。**
 
 ### RK3528 — H28K / H29K / HT2（5 个机型）
 
@@ -141,7 +157,7 @@ RK3588
 |---|---|---|
 | h66k | `eth1` | `eth0` |
 | h68k-a / -usb | `eth1` | `eth0` |
-| h68k-c / -usb / c-usb3 | `eth0 eth2 eth3` | `eth1` |
+| h68k-c / c-usb / c-usb3 | `eth0 eth2 eth3` | `eth1` |
 | h68k-d / -usb / new | `eth1 eth2 eth3` | `eth0` |
 | h69k | `eth1 eth2` | `eth0` |
 | h69k-mini | `eth1 eth2 eth3` | `eth0` |
@@ -461,9 +477,8 @@ target/linux/rockchip/
 │   ├── rk3568-hinlink-h66k.dts               无板载网口（2×GMAC disabled）
 │   ├── rk3568-hinlink-h68k-a.dts             ┐
 │   ├── rk3568-hinlink-h68k-a-usb.dts         │
-│   ├── rk3568-hinlink-h68k-c.dts             │ 11 份 RK3568 拆分机型
-│   ├── rk3568-hinlink-h68k-c-usb.dts         │
-│   ├── rk3568-hinlink-h68k-c-usb3.dts        │
+│   ├── rk3568-hinlink-h68k-c.dts             │ 10 份 RK3568 拆分机型
+│   ├── rk3568-hinlink-h68k-c-usb3.dts        │ （c-usb 与 c-usb3 已合并）
 │   ├── rk3568-hinlink-h68k-d.dts             │
 │   ├── rk3568-hinlink-h68k-d-usb.dts         │
 │   ├── rk3568-hinlink-h68k-new.dts           │
@@ -527,8 +542,9 @@ H88K 依赖 `rk3588-hinlink.dtsi`（immortalwrt 6.18 内核中没有），它又
 
 | 项目 | 状态 |
 |---|---|
-| DTS 语法结构（20 份） | ✅ 17/20 PASS（3 份失败均为**既存**的版本错配，见下） |
-| 口数与板级映射一致 | ✅ **20/20** 机型 OK（RK3568 + RK3528 + RK3588） |
+| DTS 语法结构（19 份） | ✅ 18/19 PASS（1 类失败为**既存**的版本错配，见下） |
+| 口数与板级映射一致 | ✅ **19/19** 机型 OK（RK3568 + RK3528 + RK3588） |
+| 重复机型清理 | ✅ 已合并 `h68k-c-usb` / `h68k-c-usb3`；`c` / `d` 系列经确认**不合并** |
 | 设备定义 ↔ DTS 文件对齐 | ✅ 无孤儿、无缺失 |
 | `compatible` 唯一性 | ✅ 全部唯一 |
 | 厂商 DTB ↔ 上游 DTS 交叉验证 | ✅ H89K 屏 7 项吻合；H28K / H66K / H68K 网络构成吻合 |
@@ -539,7 +555,7 @@ H88K 依赖 `rk3588-hinlink.dtsi`（immortalwrt 6.18 内核中没有），它又
 > 语法校验用真实内核 6.18 的 include 树跑的：
 > `python3 tools/dts_syntax_check.py <dts> <hinlink目录> <kernel>/include <kernel>/include/dt-bindings/input <kernel>/arch/arm64/boot/dts <kernel>/arch/arm64/boot/dts/rockchip`
 
-### ⚠️ 3 份 DTS 存在版本错配（H88K，非本轮引入）
+### ⚠️ 2 份 DTS 存在版本错配（H88K，非本轮引入）
 
 `rk3588s-ip.dtsi`（来源 jjm2473 / unifreq）末尾 include 了 4 个文件：
 
@@ -664,12 +680,35 @@ dmesg | grep -iE "gmac|ethernet|phy|combphy|saradc|pcie"
 | 脚本 | 用途 |
 |---|---|
 | `tools/check_port_count.py` | **口数自检**：交叉校验 DTS 网口构成与 `02_network` 映射 |
+| `tools/dup_scan.py` | **去重扫描**：找出硬件配置完全相同的 DTS，并自动比对两者的 `02_network` 映射 |
 | `tools/dts_syntax_check.py` | 离线 DTS 结构校验（括号平衡、include 完整性） |
 | `tools/fdtdump.py` | **DTB 反解析**：把厂商 dtb 的节点/属性 dump 成可读文本，查证硬件参数 |
 | `tools/gen_hinlink.py` | RK3568 机型 DTS 生成器 |
 | `tools/gen_hinlink_35xx.py` | RK3528 / RK3588 机型 DTS 生成器 |
 
 生成器是 DTS 的可读来源；直接改 DTS 也可以，但改完请跑校验脚本。
+
+### 合并重复机型前必跑 dup_scan.py
+
+同一块板子常被起多个名字（改型、批次年份、厂商内部命名），
+仓库里容易出现多份 DTS 但硬件配置完全一样。`dup_scan.py` 会把 DTS 归一化
+（去注释 + 归一 model/compatible + 压空白）后两两比对指纹：
+
+```sh
+python3 tools/dup_scan.py .
+```
+
+**关键**：DTS 指纹相同**只是候选**，能不能合并还要看 `02_network`。
+工具会自动读取并打印两者的接口映射，给出结论：
+
+```
+=> ✅ **可合并**（02_network 映射一致）
+=> ⚠️  需人工确认（02_network 映射不一致）
+=> ⚠️  **已确认不合并**（映射不同，属实质硬件差异）
+```
+
+本仓库里 `h68k-c` / `h68k-d` 就是「DTS 相同但 WAN 口位置不同」的典型：
+合并会让其中一代机器的 WAN 接错口。这类例外记在工具的 `KEEP_SEPARATE` 里。
 
 ### 使用 fdtdump.py 查证硬件参数
 

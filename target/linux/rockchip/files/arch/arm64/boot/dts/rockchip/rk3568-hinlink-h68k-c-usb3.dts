@@ -1,11 +1,18 @@
 // SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 /*
- * HinLink OPC-H68K C USB3
+ * HinLink OPC-H68K C USB3.0
  *
- * HinLink 适配for immortalwrt —— 每机型独立 DTS，不做自适应。
+ * HinLink 适配 for immortalwrt —— 每机型独立 DTS，不做自适应。
  *
  * 硬件事实来源：厂商 2022 R22.8.22 (armv8-h68k-c) 固件 dtb（已解包反编译逐项核对）
  * 蓝本：OpenWrt 主线 rk3568-hinlink-h68k.dts
+ *
+ * ★ 本文件同时承载两个历史标识（硬件配置完全相同，已合并）：
+ *     hinlink,opc-h68k-c-usb    —— 2022 C/D/F 的 USB3.0 变体
+ *     hinlink,opc-h68k-c-usb3   —— 2022.8 的 c-usb3 改型
+ *   两者都是「C/D/F 基础上把 SATA 口改成 USB 3.0」，DTS 无任何差异，
+ *   故合并为一份 DTS，用两个 compatible 兼容旧固件的 board 匹配。
+ *   两个标识的 02_network 映射本来就一致（LAN eth0 eth2 eth3 / WAN eth1）。
  *
  * 2022.8 版：C/D/F 基础上改USB 3.0
  */
@@ -16,7 +23,7 @@
 
 / {
 	model = "HinLink OPC-H68K C USB3";
-	compatible = "hinlink,opc-h68k-c-usb3", "rockchip,rk3568";
+	compatible = "hinlink,opc-h68k-c-usb3", "hinlink,opc-h68k-c-usb", "rockchip,rk3568";
 
 	aliases {
 		ethernet0 = &gmac0;
