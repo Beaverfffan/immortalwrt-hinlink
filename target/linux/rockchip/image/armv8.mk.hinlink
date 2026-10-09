@@ -82,7 +82,15 @@ define Device/hinlink_opc-h66k
   DEVICE_VENDOR := HINLINK
   DEVICE_MODEL := OPC-H66K
   DEVICE_DTS := rk3568-hinlink-h66k
-  UBOOT_DEVICE_NAME := generic-rk3568
+  # ★ 不打包 u-boot：u-boot-rockchip 里**没有 hinlink 的 defconfig**
+  #   （只有 sige3-rk3568 / roc-pc-rk3568 / lyt-t68m-rk3568 等）。
+  #   原来的 `UBOOT_DEVICE_NAME := hinlink-xxx` 会让打包阶段执行
+  #     dd .../$(UBOOT_DEVICE_NAME)-u-boot-rockchip.bin
+  #   因文件不存在而编译失败。
+  #   ⇒ 清空 BOOT_FLOW，改用 device 自带 u-boot + boot.scr 引导
+  #     （boot-script 会写入 default.bootscript，与 iStoreOS 的
+  #      Device/Legacy 模式一致；H68K/H69K 出厂即带 u-boot）。
+  BOOT_FLOW :=
   DEVICE_PACKAGES := kmod-r8169 kmod-ata-ahci-dwc
 endef
 TARGET_DEVICES += hinlink_opc-h66k
@@ -96,7 +104,15 @@ define Device/hinlink_opc-h68k-a
   $(Device/hinlink_h6xk_sdio_ap6256)
   DEVICE_MODEL := OPC-H68K a-b (2022, SATA)
   DEVICE_DTS := rk3568-hinlink-h68k-a
-  UBOOT_DEVICE_NAME := hinlink-h68k-rk3568
+  # ★ 不打包 u-boot：u-boot-rockchip 里**没有 hinlink 的 defconfig**
+  #   （只有 sige3-rk3568 / roc-pc-rk3568 / lyt-t68m-rk3568 等）。
+  #   原来的 `UBOOT_DEVICE_NAME := hinlink-xxx` 会让打包阶段执行
+  #     dd .../$(UBOOT_DEVICE_NAME)-u-boot-rockchip.bin
+  #   因文件不存在而编译失败。
+  #   ⇒ 清空 BOOT_FLOW，改用 device 自带 u-boot + boot.scr 引导
+  #     （boot-script 会写入 default.bootscript，与 iStoreOS 的
+  #      Device/Legacy 模式一致；H68K/H69K 出厂即带 u-boot）。
+  BOOT_FLOW :=
   DEVICE_PACKAGES += kmod-ata-ahci-dwc
 endef
 TARGET_DEVICES += hinlink_opc-h68k-a
@@ -105,7 +121,15 @@ define Device/hinlink_opc-h68k-a-usb
   $(Device/hinlink_h6xk_sdio_ap6256)
   DEVICE_MODEL := OPC-H68K a-b (2022, USB3.0)
   DEVICE_DTS := rk3568-hinlink-h68k-a-usb
-  UBOOT_DEVICE_NAME := hinlink-h68k-rk3568
+  # ★ 不打包 u-boot：u-boot-rockchip 里**没有 hinlink 的 defconfig**
+  #   （只有 sige3-rk3568 / roc-pc-rk3568 / lyt-t68m-rk3568 等）。
+  #   原来的 `UBOOT_DEVICE_NAME := hinlink-xxx` 会让打包阶段执行
+  #     dd .../$(UBOOT_DEVICE_NAME)-u-boot-rockchip.bin
+  #   因文件不存在而编译失败。
+  #   ⇒ 清空 BOOT_FLOW，改用 device 自带 u-boot + boot.scr 引导
+  #     （boot-script 会写入 default.bootscript，与 iStoreOS 的
+  #      Device/Legacy 模式一致；H68K/H69K 出厂即带 u-boot）。
+  BOOT_FLOW :=
 endef
 TARGET_DEVICES += hinlink_opc-h68k-a-usb
 
@@ -115,7 +139,15 @@ define Device/hinlink_opc-h68k-c
   $(Device/hinlink_h6xk_m2_wifi)
   DEVICE_MODEL := OPC-H68K c (2022, SATA)
   DEVICE_DTS := rk3568-hinlink-h68k-c
-  UBOOT_DEVICE_NAME := hinlink-h68k-rk3568
+  # ★ 不打包 u-boot：u-boot-rockchip 里**没有 hinlink 的 defconfig**
+  #   （只有 sige3-rk3568 / roc-pc-rk3568 / lyt-t68m-rk3568 等）。
+  #   原来的 `UBOOT_DEVICE_NAME := hinlink-xxx` 会让打包阶段执行
+  #     dd .../$(UBOOT_DEVICE_NAME)-u-boot-rockchip.bin
+  #   因文件不存在而编译失败。
+  #   ⇒ 清空 BOOT_FLOW，改用 device 自带 u-boot + boot.scr 引导
+  #     （boot-script 会写入 default.bootscript，与 iStoreOS 的
+  #      Device/Legacy 模式一致；H68K/H69K 出厂即带 u-boot）。
+  BOOT_FLOW :=
   DEVICE_PACKAGES += kmod-r8169 kmod-ata-ahci-dwc
 endef
 TARGET_DEVICES += hinlink_opc-h68k-c
@@ -129,7 +161,21 @@ define Device/hinlink_opc-h68k-c-usb3
   $(Device/hinlink_h6xk_m2_wifi)
   DEVICE_MODEL := OPC-H68K c (2022/2022.8, USB3.0)
   DEVICE_DTS := rk3568-hinlink-h68k-c-usb3
-  UBOOT_DEVICE_NAME := hinlink-h68k-rk3568
+  # ★ 不打包 u-boot：u-boot-rockchip 里**没有 hinlink 的 defconfig**
+  #   （只有 sige3-rk3568 / roc-pc-rk3568 / lyt-t68m-rk3568 等）。
+  #   原来的 `UBOOT_DEVICE_NAME := hinlink-xxx` 会让打包阶段执行
+  #     dd .../$(UBOOT_DEVICE_NAME)-u-boot-rockchip.bin
+  #   因文件不存在而编译失败。
+  #   ⇒ 清空 BOOT_FLOW，改用 device 自带 u-boot + boot.scr 引导
+  #     （boot-script 会写入 default.bootscript，与 iStoreOS 的
+  #      Device/Legacy 模式一致；H68K/H69K 出厂即带 u-boot）。
+  # ★ 借用同 SoC（RK3568）的 sige3 u-boot：
+  #   immortalwrt 与 iStoreOS 都**没有 hinlink 专属 u-boot defconfig**。
+  #   sige3-rk3568 用的是通用 TPL（rk3568_ddr_1560MHz）+ ATF，
+  #   本设备 sysupgrade 时不写 u-boot 区，故可安全使用；
+  #   若要从 SD 卡全新刷机，建议先用原厂/iStoreOS 的完整镜像刷一次。
+  #   需在 .config 里选 CONFIG_PACKAGE_u-boot-sige3-rk3568=y。
+  UBOOT_DEVICE_NAME := sige3-rk3568
   DEVICE_PACKAGES += kmod-r8169
 endef
 TARGET_DEVICES += hinlink_opc-h68k-c-usb3
@@ -140,7 +186,15 @@ define Device/hinlink_opc-h68k-d
   $(Device/hinlink_h6xk_m2_wifi)
   DEVICE_MODEL := OPC-H68K d (2023.4, SATA)
   DEVICE_DTS := rk3568-hinlink-h68k-d
-  UBOOT_DEVICE_NAME := hinlink-h68k-rk3568
+  # ★ 不打包 u-boot：u-boot-rockchip 里**没有 hinlink 的 defconfig**
+  #   （只有 sige3-rk3568 / roc-pc-rk3568 / lyt-t68m-rk3568 等）。
+  #   原来的 `UBOOT_DEVICE_NAME := hinlink-xxx` 会让打包阶段执行
+  #     dd .../$(UBOOT_DEVICE_NAME)-u-boot-rockchip.bin
+  #   因文件不存在而编译失败。
+  #   ⇒ 清空 BOOT_FLOW，改用 device 自带 u-boot + boot.scr 引导
+  #     （boot-script 会写入 default.bootscript，与 iStoreOS 的
+  #      Device/Legacy 模式一致；H68K/H69K 出厂即带 u-boot）。
+  BOOT_FLOW :=
   DEVICE_PACKAGES += kmod-r8169 kmod-ata-ahci-dwc
 endef
 TARGET_DEVICES += hinlink_opc-h68k-d
@@ -149,7 +203,15 @@ define Device/hinlink_opc-h68k-d-usb
   $(Device/hinlink_h6xk_m2_wifi)
   DEVICE_MODEL := OPC-H68K d (2023.4, USB3.0)
   DEVICE_DTS := rk3568-hinlink-h68k-d-usb
-  UBOOT_DEVICE_NAME := hinlink-h68k-rk3568
+  # ★ 不打包 u-boot：u-boot-rockchip 里**没有 hinlink 的 defconfig**
+  #   （只有 sige3-rk3568 / roc-pc-rk3568 / lyt-t68m-rk3568 等）。
+  #   原来的 `UBOOT_DEVICE_NAME := hinlink-xxx` 会让打包阶段执行
+  #     dd .../$(UBOOT_DEVICE_NAME)-u-boot-rockchip.bin
+  #   因文件不存在而编译失败。
+  #   ⇒ 清空 BOOT_FLOW，改用 device 自带 u-boot + boot.scr 引导
+  #     （boot-script 会写入 default.bootscript，与 iStoreOS 的
+  #      Device/Legacy 模式一致；H68K/H69K 出厂即带 u-boot）。
+  BOOT_FLOW :=
   DEVICE_PACKAGES += kmod-r8169
 endef
 TARGET_DEVICES += hinlink_opc-h68k-d-usb
@@ -160,7 +222,15 @@ define Device/hinlink_opc-h68k-new
   $(Device/hinlink_h6xk_sdio_aic8800)
   DEVICE_MODEL := OPC-H68K new (2023末~2024)
   DEVICE_DTS := rk3568-hinlink-h68k-new
-  UBOOT_DEVICE_NAME := hinlink-h68k-rk3568
+  # ★ 不打包 u-boot：u-boot-rockchip 里**没有 hinlink 的 defconfig**
+  #   （只有 sige3-rk3568 / roc-pc-rk3568 / lyt-t68m-rk3568 等）。
+  #   原来的 `UBOOT_DEVICE_NAME := hinlink-xxx` 会让打包阶段执行
+  #     dd .../$(UBOOT_DEVICE_NAME)-u-boot-rockchip.bin
+  #   因文件不存在而编译失败。
+  #   ⇒ 清空 BOOT_FLOW，改用 device 自带 u-boot + boot.scr 引导
+  #     （boot-script 会写入 default.bootscript，与 iStoreOS 的
+  #      Device/Legacy 模式一致；H68K/H69K 出厂即带 u-boot）。
+  BOOT_FLOW :=
   DEVICE_PACKAGES += kmod-r8169 kmod-ata-ahci-dwc
 endef
 TARGET_DEVICES += hinlink_opc-h68k-new
@@ -181,7 +251,15 @@ define Device/hinlink_opc-h69k
   $(Device/hinlink_h6xk_sdio_aic8800)
   DEVICE_MODEL := H69K (三网口, 5G, 风扇)
   DEVICE_DTS := rk3568-hinlink-h69k-3eth
-  UBOOT_DEVICE_NAME := hinlink-h69k-rk3568
+  # ★ 不打包 u-boot：u-boot-rockchip 里**没有 hinlink 的 defconfig**
+  #   （只有 sige3-rk3568 / roc-pc-rk3568 / lyt-t68m-rk3568 等）。
+  #   原来的 `UBOOT_DEVICE_NAME := hinlink-xxx` 会让打包阶段执行
+  #     dd .../$(UBOOT_DEVICE_NAME)-u-boot-rockchip.bin
+  #   因文件不存在而编译失败。
+  #   ⇒ 清空 BOOT_FLOW，改用 device 自带 u-boot + boot.scr 引导
+  #     （boot-script 会写入 default.bootscript，与 iStoreOS 的
+  #      Device/Legacy 模式一致；H68K/H69K 出厂即带 u-boot）。
+  BOOT_FLOW :=
   DEVICE_PACKAGES += kmod-hwmon-pwmfan kmod-usb-serial-option kmod-r8169 \
                      kmod-thermal kmod-hwmon-thermal
 endef
@@ -194,7 +272,15 @@ define Device/hinlink_opc-h69k-mini
   $(Device/hinlink_h6xk_sdio_aic8800)
   DEVICE_MODEL := H69K mini (四网口 = H68K max, 5G, 风扇)
   DEVICE_DTS := rk3568-hinlink-h69k-mini
-  UBOOT_DEVICE_NAME := hinlink-h69k-rk3568
+  # ★ 不打包 u-boot：u-boot-rockchip 里**没有 hinlink 的 defconfig**
+  #   （只有 sige3-rk3568 / roc-pc-rk3568 / lyt-t68m-rk3568 等）。
+  #   原来的 `UBOOT_DEVICE_NAME := hinlink-xxx` 会让打包阶段执行
+  #     dd .../$(UBOOT_DEVICE_NAME)-u-boot-rockchip.bin
+  #   因文件不存在而编译失败。
+  #   ⇒ 清空 BOOT_FLOW，改用 device 自带 u-boot + boot.scr 引导
+  #     （boot-script 会写入 default.bootscript，与 iStoreOS 的
+  #      Device/Legacy 模式一致；H68K/H69K 出厂即带 u-boot）。
+  BOOT_FLOW :=
   DEVICE_PACKAGES += kmod-hwmon-pwmfan kmod-usb-serial-option kmod-r8169 \
                      kmod-thermal kmod-hwmon-thermal
 endef
@@ -209,7 +295,15 @@ define Device/hinlink_h28k_rk3528
   DEVICE_ALT0_VENDOR := LinkStar
   DEVICE_ALT0_MODEL := H28K
   DEVICE_DTS := rk3528-hinlink-h28k
-  UBOOT_DEVICE_NAME := hinlink-h28k-rk3528
+  # ★ 不打包 u-boot：u-boot-rockchip 里**没有 hinlink 的 defconfig**
+  #   （只有 sige3-rk3568 / roc-pc-rk3568 / lyt-t68m-rk3568 等）。
+  #   原来的 `UBOOT_DEVICE_NAME := hinlink-xxx` 会让打包阶段执行
+  #     dd .../$(UBOOT_DEVICE_NAME)-u-boot-rockchip.bin
+  #   因文件不存在而编译失败。
+  #   ⇒ 清空 BOOT_FLOW，改用 device 自带 u-boot + boot.scr 引导
+  #     （boot-script 会写入 default.bootscript，与 iStoreOS 的
+  #      Device/Legacy 模式一致；H68K/H69K 出厂即带 u-boot）。
+  BOOT_FLOW :=
   # ★ H28K 是**双网口**：
   #     网口1 RTL8211F RGMII 千兆（板载，gmac1）
   #     网口2 RTL8111H  PCIe 千兆（PCI 枚举产生）
@@ -257,7 +351,15 @@ define Device/hinlink_h29k-v1.3-1.14_rk3528
   DEVICE_VENDOR := HINLINK
   DEVICE_MODEL := H29K v1.3 (1.14 inch)
   DEVICE_DTS := rk3528-hinlink-h29k-v1.3-1.14
-  UBOOT_DEVICE_NAME := generic-rk3528
+  # ★ 不打包 u-boot：u-boot-rockchip 里**没有 hinlink 的 defconfig**
+  #   （只有 sige3-rk3568 / roc-pc-rk3568 / lyt-t68m-rk3568 等）。
+  #   原来的 `UBOOT_DEVICE_NAME := hinlink-xxx` 会让打包阶段执行
+  #     dd .../$(UBOOT_DEVICE_NAME)-u-boot-rockchip.bin
+  #   因文件不存在而编译失败。
+  #   ⇒ 清空 BOOT_FLOW，改用 device 自带 u-boot + boot.scr 引导
+  #     （boot-script 会写入 default.bootscript，与 iStoreOS 的
+  #      Device/Legacy 模式一致；H68K/H69K 出厂即带 u-boot）。
+  BOOT_FLOW :=
   DEVICE_PACKAGES := kmod-aic8800s kmod-fb-tft-st7789v kmod-r8169
 endef
 TARGET_DEVICES += hinlink_h29k-v1.3-1.14_rk3528
@@ -275,7 +377,15 @@ define Device/hinlink_h29k-v5-1.14_rk3528
   DEVICE_VENDOR := HINLINK
   DEVICE_MODEL := H29K v5 (1.14 inch)
   DEVICE_DTS := rk3528-hinlink-h29k-v5-1.14
-  UBOOT_DEVICE_NAME := generic-rk3528
+  # ★ 不打包 u-boot：u-boot-rockchip 里**没有 hinlink 的 defconfig**
+  #   （只有 sige3-rk3568 / roc-pc-rk3568 / lyt-t68m-rk3568 等）。
+  #   原来的 `UBOOT_DEVICE_NAME := hinlink-xxx` 会让打包阶段执行
+  #     dd .../$(UBOOT_DEVICE_NAME)-u-boot-rockchip.bin
+  #   因文件不存在而编译失败。
+  #   ⇒ 清空 BOOT_FLOW，改用 device 自带 u-boot + boot.scr 引导
+  #     （boot-script 会写入 default.bootscript，与 iStoreOS 的
+  #      Device/Legacy 模式一致；H68K/H69K 出厂即带 u-boot）。
+  BOOT_FLOW :=
   DEVICE_PACKAGES := kmod-aic8800s kmod-fb-tft-st7789v kmod-r8169 \
                      kmod-iio-adc-rk3528 kmod-power-supply
 endef
@@ -291,7 +401,15 @@ define Device/hinlink_h29k-v5-1.49_rk3528
   DEVICE_VENDOR := HINLINK
   DEVICE_MODEL := H29K v5 (1.49 inch touch)
   DEVICE_DTS := rk3528-hinlink-h29k-v5-1.49
-  UBOOT_DEVICE_NAME := generic-rk3528
+  # ★ 不打包 u-boot：u-boot-rockchip 里**没有 hinlink 的 defconfig**
+  #   （只有 sige3-rk3568 / roc-pc-rk3568 / lyt-t68m-rk3568 等）。
+  #   原来的 `UBOOT_DEVICE_NAME := hinlink-xxx` 会让打包阶段执行
+  #     dd .../$(UBOOT_DEVICE_NAME)-u-boot-rockchip.bin
+  #   因文件不存在而编译失败。
+  #   ⇒ 清空 BOOT_FLOW，改用 device 自带 u-boot + boot.scr 引导
+  #     （boot-script 会写入 default.bootscript，与 iStoreOS 的
+  #      Device/Legacy 模式一致；H68K/H69K 出厂即带 u-boot）。
+  BOOT_FLOW :=
   DEVICE_PACKAGES := kmod-aic8800s kmod-fb-tft-gc9307 kmod-r8169 \
                      kmod-iio-adc-rk3528 kmod-power-supply \
                      kmod-input-chipone-axs5106 kmod-i2c-chipone-axs5106
@@ -304,7 +422,15 @@ define Device/hinlink_opc-ht2_rk3528
   DEVICE_VENDOR := HINLINK
   DEVICE_MODEL := OPC-HT2
   DEVICE_DTS := rk3528-hinlink-ht2
-  UBOOT_DEVICE_NAME := hinlink-ht2-rk3528
+  # ★ 不打包 u-boot：u-boot-rockchip 里**没有 hinlink 的 defconfig**
+  #   （只有 sige3-rk3568 / roc-pc-rk3568 / lyt-t68m-rk3568 等）。
+  #   原来的 `UBOOT_DEVICE_NAME := hinlink-xxx` 会让打包阶段执行
+  #     dd .../$(UBOOT_DEVICE_NAME)-u-boot-rockchip.bin
+  #   因文件不存在而编译失败。
+  #   ⇒ 清空 BOOT_FLOW，改用 device 自带 u-boot + boot.scr 引导
+  #     （boot-script 会写入 default.bootscript，与 iStoreOS 的
+  #      Device/Legacy 模式一致；H68K/H69K 出厂即带 u-boot）。
+  BOOT_FLOW :=
   DEVICE_PACKAGES := kmod-aic8800s kmod-r8169
 endef
 TARGET_DEVICES += hinlink_opc-ht2_rk3528
@@ -337,7 +463,15 @@ define Device/hinlink_opc-h89k_rk3588
   DEVICE_VENDOR := HINLINK
   DEVICE_MODEL := OPC-H89K (3 ports, 5G)
   DEVICE_DTS := rk3588-hinlink-h89k
-  UBOOT_DEVICE_NAME := generic-rk3588
+  # ★ 不打包 u-boot：u-boot-rockchip 里**没有 hinlink 的 defconfig**
+  #   （只有 sige3-rk3568 / roc-pc-rk3568 / lyt-t68m-rk3568 等）。
+  #   原来的 `UBOOT_DEVICE_NAME := hinlink-xxx` 会让打包阶段执行
+  #     dd .../$(UBOOT_DEVICE_NAME)-u-boot-rockchip.bin
+  #   因文件不存在而编译失败。
+  #   ⇒ 清空 BOOT_FLOW，改用 device 自带 u-boot + boot.scr 引导
+  #     （boot-script 会写入 default.bootscript，与 iStoreOS 的
+  #      Device/Legacy 模式一致；H68K/H69K 出厂即带 u-boot）。
+  BOOT_FLOW :=
   DEVICE_PACKAGES := kmod-r8169 kmod-mt7921e wpad-basic-mbedtls \
                      kmod-hwmon-pwmfan kmod-usb-serial-option \
                      kmod-fb-tft-st7789v
@@ -352,7 +486,15 @@ define Device/hinlink_h88k_v2
   DEVICE_ALT0_VENDOR := LinkStar
   DEVICE_ALT0_MODEL := H88K
   DEVICE_DTS := rk3588-hinlink-h88k-v2
-  UBOOT_DEVICE_NAME := hinlink-h88k-rk3588
+  # ★ 不打包 u-boot：u-boot-rockchip 里**没有 hinlink 的 defconfig**
+  #   （只有 sige3-rk3568 / roc-pc-rk3568 / lyt-t68m-rk3568 等）。
+  #   原来的 `UBOOT_DEVICE_NAME := hinlink-xxx` 会让打包阶段执行
+  #     dd .../$(UBOOT_DEVICE_NAME)-u-boot-rockchip.bin
+  #   因文件不存在而编译失败。
+  #   ⇒ 清空 BOOT_FLOW，改用 device 自带 u-boot + boot.scr 引导
+  #     （boot-script 会写入 default.bootscript，与 iStoreOS 的
+  #      Device/Legacy 模式一致；H68K/H69K 出厂即带 u-boot）。
+  BOOT_FLOW :=
   DEVICE_PACKAGES := kmod-r8169 kmod-nvme
 endef
 TARGET_DEVICES += hinlink_h88k_v2

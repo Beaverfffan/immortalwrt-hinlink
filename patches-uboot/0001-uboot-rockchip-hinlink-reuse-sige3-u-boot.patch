@@ -1,0 +1,68 @@
+From: HinLink adaptation for immortalwrt
+Subject: [PATCH] uboot-rockchip: let hinlink h68k-c-usb3 reuse sige3-rk3568 u-boot
+
+为什么需要这个 patch
+--------------------
+OpenWrt 的 u-boot 包是用 `BUILD_DEVICES` **反向关联**设备的：只有当前选中的
+设备出现在某个 `U-Boot/xxx` 的 BUILD_DEVICES 列表里，`make defconfig` 才会
+保留 `CONFIG_PACKAGE_u-boot-xxx=y`。
+
+    define U-Boot/sige3-rk3568
+      $(U-Boot/rk3568/Default)
+      NAME:=Sige3
+      BUILD_DEVICES:= \
+        armsom_sige3          ← 只关联 sige3
+    endef
+
+而 **immortalwrt 与 iStoreOS 都没有 hinlink 专属的 u-boot defconfig**
+（`package/boot/uboot-rockchip/src/configs/` 里只有 sige3 / roc-pc / lyt-t68m /
+mmbox / mrkaio / fastrhino / graperain / 9tripod / xiguapi 等）。
+所以设备定义里写 `UBOOT_DEVICE_NAME := hinlink-h68k-rk3568` 会让打包阶段执行
+
+    dd if=$(STAGING_DIR_IMAGE)/hinlink-h68k-rk3568-u-boot-rockchip.bin ...
+
+因文件不存在而 **编译失败**。
+
+做法
+----
+借用同 SoC（RK3568）的 `sige3-rk3568` u-boot，把我们的设备名加入它的
+BUILD_DEVICES。sige3-rk3568 用的是**通用**的 DDR 初始化与 ATF：
+
+    define U-Boot/rk3568/Default
+      ATF:=$(RK3568_ATF)      # rk3568_bl31_v1.44.elf
+      TPL:=$(RK3568_TPL)      # rk3568_ddr_1560MHz_v1.21.bin
+    endef
+
+DDR/ATF 都是 Rockchip 的通用件，不依赖具体板子。
+
+适用范围与限制
+--------------
+- **sysupgrade 升级**（原厂或 iStoreOS 固件上直接升级）：安全 ——
+  sysupgrade 只写 kernel/rootfs 分区，不动 u-boot 区。
+- **SD 卡全新刷机**：u-boot 的阶段如果与原厂不一致（如 PMIC 型号、
+  DDR 配置），可能无法从 SD 启动。建议先用原厂/iStoreOS 的完整镜像刷一次
+  再用本固件 sysupgrade。
+
+后续正规方案
+------------
+iStoreOS 有 `easepi-rk3568` / `easepi-rk3568-rk809`（RK809 版，H68K 正是
+RK809）两个 **DEFAULT:=y 的通用 u-boot**，并配套 u-boot dts。若要彻底解决，
+应从 iStoreOS 移植这套（defconfig + u-boot dts + Makefile 条目）。
+
+已在真实构建树验证：`make -j16` 产出 sysupgrade.img.gz，BUILD_EXIT_0。
+
+Signed-off-by: HinLink immortalwrt adaptation
+---
+--- a/package/boot/uboot-rockchip/Makefile
++++ b/package/boot/uboot-rockchip/Makefile
+@@ -392,7 +392,8 @@
+ define U-Boot/sige3-rk3568
+   $(U-Boot/rk3568/Default)
+   NAME:=Sige3
+   BUILD_DEVICES:= \
+-    armsom_sige3
++    armsom_sige3 \
++    hinlink_opc-h68k-c-usb3
+ endef
+ 
+ define U-Boot/xiguapi-v3-rk3568
