@@ -26,12 +26,12 @@ compatible，`02_network` / `01_leds` 每机型独立分支，`ethN` 映射写�
 
 | # | 机型 | DTS | compatible | 网口数 | 网络构成 | 板载 WiFi |
 |---|---|---|---|---|---|---|
-| 1 | **H68K A/B**（2022 双千兆） | `rk3568-hinlink-h68k-a.dts` | `hinlink,opc-h68k-a` | 2 | 2× GMAC | SDIO + RTC |
+| 1 | **H68K A/B**（2022 双千兆） | `rk3568-hinlink-h68k-a.dts` | `hinlink,opc-h68k-a` | 2 | 2× GMAC | **AP6256**（Broadcom brcmfmac）+ RTC |
 | 2 | **H68K C/D/F**（2022 四网口） | `rk3568-hinlink-h68k-c.dts` | `hinlink,opc-h68k-c` | 4 | 2× GMAC + 2× RTL8125 | 无 |
 | 3 | **H68K C USB3**（2022.8） | `rk3568-hinlink-h68k-c-usb3.dts` | `hinlink,opc-h68k-c-usb3` | 4 | 同上 | 无 |
 | 4 | **H68K D**（2023.4 推荐版） | `rk3568-hinlink-h68k-d.dts` | `hinlink,opc-h68k-d` | 4 | 同上 | 无 |
-| 5 | **H68K new**（2023末~2024） | `rk3568-hinlink-h68k-new.dts` | `hinlink,opc-h68k-new` | 4 | 同上 | SDIO |
-| 6 | **H69K**（真·装 5G 模组） | `rk3568-hinlink-h69k.dts` | `hinlink,opc-h69k` | 3 | 1× GMAC + 2× RTL8125 | SDIO + 5G |
+| 5 | **H68K new**（2023末~2024） | `rk3568-hinlink-h68k-new.dts` | `hinlink,opc-h68k-new` | 4 | 同上 | **AIC8800** |
+| 6 | **H69K**（真·装 5G 模组） | `rk3568-hinlink-h69k.dts` | `hinlink,opc-h69k` | 3 | 1× GMAC + 2× RTL8125 | **AIC8800** + 5G |
 | 7 | **H69K mini**（体积精简） | `rk3568-hinlink-h69k-mini.dts` | `hinlink,opc-h69k-mini` | 2 | 1× GMAC + 1× RTL8125 | 无 |
 
 ### 网口映射（写死，不探测）
@@ -113,7 +113,7 @@ RTL8125B 是标准 PCI 设备，内核 pcie 驱动 + `kmod-r8169` 会在启动�
 这组值在 iStoreOS 中被改成了 `0x26/0x2a` 与 `0x34/0x22`（自行调优），
 **本方案采用厂商原厂值**，与 OpenWrt 主线一致。
 
-### AIC8800 SDIO WiFi（a/b 系 + new + 69K）
+### SDIO WiFi（a/b 系=AP6256，new/69K=AIC8800）
 
 引脚来自 2022 a-b dtb 与 H69K 点亮脚本交叉验证：
 
@@ -127,9 +127,8 @@ host-wake:  GPIO3_D4 (0x1c) 高电平触发
 32.768kHz:  RK809 PMIC clkout2  =>  clocks = <&rk809 1>
 ```
 
-> ⚠️ 注意：H69K 点亮脚本用的是 **GPIO3_A0**，而 2022 a-b dtb 用的是 **GPIO3_D5**。
-> 二者位置不同。本方案按 a-b dtb 的 `GPIO3_D5`（该值来自厂商正式 dtb），
-> H69K 的实际引脚**需实机确认**。
+> > ⚠️ H69K 点亮脚本用 **GPIO3_A0**，2022 a-b dtb 用 **GPIO3_D5**，二者位置不同。
+> 本方案取 `GPIO3_D5`（来自厂商正式 dtb）。**H69K 实机引脚仍需确认。**
 
 ### 5G 模组电源（H69K）
 
@@ -225,7 +224,7 @@ make -j$(nproc)
 
 1. **H69K 的 WiFi 复位引脚**：脚本写 GPIO3_A0，a-b dtb 是 GPIO3_D5，需确认
 2. **H69K-mini 的实际屏蔽配置**：当前按「屏蔽 1 GMAC + 1 PCIe」处理，需确认
-3. **H68K new 的 WiFi 是否为 AIC8800**：当前按有 WiFi 处理
+3. ~~H68K new 的 WiFi 型号~~ **已确认：AIC8800**（全新机器）
 4. **各机型 LED 颜色/闪烁规则**
 5. **H69K 5G 模组**：当前用 GPIO0_PC0 + 2s 延时（抄 iStoreOS），需确认
 
@@ -233,12 +232,19 @@ make -j$(nproc)
 
 ## 八、遗留的已知不确定项
 
-### 8.1 H68K A/B 的 WiFi 驱动
+### 8.1 WiFi 驱动分档（已按实机确认）
 
-a/b 系是 SDIO WiFi（AIC8800 或 AP6256）。方案给出 DTS，
-但 `kmod-aic8800s` 是否为正确的驱动包需确认 —— AP6256 用 `kmod-brcmfmac` 或
-`kmod-ap6256`。`armv8.mk.hinlink` 中 A/B 机型挂的是 `kmod-mt7921e`
-（沿用主线 h6xk 基线），**这对 A/B 可能不对**。
+| 机型 | WiFi 芯片 | 驱动包 |
+|---|---|---|
+| h68k-a（老机器） | **AP6256**（Broadcom） | `kmod-brcmfmac kmod-firmware-brcm80211` |
+| h68k-new / h69k（全新机器） | **AIC8800** | `kmod-aic8800s` |
+| h68k-c / c-usb3 / d / h69k-mini | 无板载 WiFi（M.2 插槽） | `kmod-mt7921e` |
+
+`armv8.mk.hinlink` 中已按此分三档基类：
+- `hinlink_h6xk_base` —— 有线公共包
+- `hinlink_h6xk_m2_wifi` —— M.2 无线机型
+- `hinlink_h6xk_sdio_ap6256` —— 老机器 AP6256
+- `hinlink_h6xk_sdio_aic8800` —— 新机器 AIC8800
 
 ### 8.2 2023.4 版 H68K-D 的 delay 值
 
