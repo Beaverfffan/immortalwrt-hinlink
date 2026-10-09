@@ -2,19 +2,29 @@
 /*
  * HinLink OPC-H28K (RK3528)
  *
- * 网络构成：1×板载 RGMII(gmac1) + 1×PCIe RTL8111HS
+ * ★ 本文件已按厂商固件 QWRT-R24.07.07-rockchip-rk35xx-hinlink_h28x 重新更正。
+ *   厂商 dtb 已归档为 vendor-h28x.dtb（59319 B，compatible = "hlink,h28k"）。
  *
- * ★ 无板载 WiFi —— 本机不使能 sdio0，target 也不带 kmod-aic8800s。
- *   RK3528 的 WiFi 走 sdio0；H28K 板上没有 WiFi 模组，故整条 sdio 链路
- *   （sdio0 控制器 + pwrseq + mmc-pwrseq）一律不声明。
- *   ⚠️ 上游 unifreq 的 rk3528-hlink-h28k.dts 同样只有 pcie2x1 + i2c3，
- *      没有任何 sdio/wifi 节点 —— 两侧独立印证「H28K 无 WiFi」。
+ * 网络构成：**单网口** —— 只有板载 RGMII(gmac1)
  *
- * ★ PCIe 口是真实的 RTL8111HS，必须显式挂 pcie-eth 子节点：
- *   上游 rk3528-hlink-h28k.dts 挂在 pcie2x1 下，compatible = "pci10ec,8168"，
- *   reg = <0x000000 0 0 0 0>（device 0 function 0），realtek,led-data = <0x0870>。
- *   本 DTS 沿用上游的 pcie-eth 写法 —— RK3528 的 pcie 控制器在 rk3528.dtsi
- *   里没有内建网卡节点，不显式声明就不会枚举出 eth1。
+ *   厂商 dtb 三重实证「没有第二网口」：
+ *     1. 全树 `pci10ec` 出现 0 次
+ *     2. /pcie@fe4f0000 下只有 legacy-interrupt-controller，无网卡子节点
+ *     3. aliases 只有 ethernet0 = /ethernet@ffbe0000，无 ethernet1
+ *   ⇒ board.d/02_network 对本机只映射 eth0，不设独立WAN。
+ *
+ * ★ 无板载 WiFi —— 厂商 dtb 里 /mmc@ffbf0000 带 `no-sdio` 属性，
+ *   明确禁用 SDIO（RK3528 的 WiFi 走 sdio0）。本 DTS 不声明 sdio 链路，
+ *   target 也不带 kmod-aic8800s。
+ *   ⚠️ 上游 unifreq 的 rk3528-hlink-h28k.dts 同样没有任何 sdio/wifi 节点，
+ *      两侧独立印证「H28K 无 WiFi」。
+ *
+ * ★ 关于 PCIe：控制器保留 status = "okay"（厂商原值），但**不挂网卡子节点**。
+ *   上一轮曾依据上游 rk3528-hlink-h28k.dts 补了 `pcie-eth@10,0`（RTL8111HS），
+ *   厂商 dtb 证明那是错的，已移除。详见下方 &pcie 段注释。
+ *
+ * ★ 关于上、下拉：厂商把 PHY 复位配在 gmac1 的 snps,reset-gpio（GPIO4_C2 低有效），
+ *   PHY 节点上反而没有 reset-gpios —— 本 DTS 已改为与厂商一致。
  */
 
 /dts-v1/;
@@ -25,12 +35,11 @@
 #include "rk3528.dtsi"
 
 / {
-	model = "HINLINK OPC-H28K Board";
-	compatible = "hinlink,opc-h28k", "hinlink,h28k", "hlink,h28k", "rockchip,rk3528";
+	model = "Hinlink H28K";
+	compatible = "hlink,h28k", "hinlink,opc-h28k", "hinlink,h28k", "rockchip,rk3528";
 
 	aliases {
 		ethernet0 = &gmac1;
-		ethernet1 = &pcie_eth;
 		mmc0 = &sdhci;
 		mmc1 = &sdmmc;
 		serial0 = &uart0;
@@ -198,11 +207,33 @@
 	cpu-supply = <&vdd_arm>;
 };
 
+/*
+ * 网口 1/1：板载 RGMII —— 全部为厂商 dtb 原值
+ *
+ * ★ 厂商 QWRT-R24.07.07 (h28x) 解出的 dtb 实证：
+ *   phy-mode       = "rgmii-rxid"   ← 不是 rgmii-id
+ *   tx_delay       = 59 (0x3b)
+ *   rx_delay       = 无（内核 dtsi 默认）
+ *   reset-gpio     = gpio4 pin18 = GPIO4_C2，低有效
+ *   reset-delays-us= <0 20000 100000>
+ *   pinctrl-0      = rgmii_miim / rgmii_tx_bus2 / rgmii_rx_bus2
+ *                    / rgmii_rgmii_clk / rgmii_rgmii_bus
+ *
+ * ⚠️ 复位脚的写法与本文件原先不同：厂商把复位配在 gmac1 节点的
+ *    snps,reset-gpio 上，而 PHY 节点（ethernet-phy@1）上**没有** reset-gpios。
+ *    本 DTS 改为与厂商一致。
+ */
 &gmac1 {
 	clock_in_out = "output";
 	phy-handle = <&rgmii_phy>;
-	phy-mode = "rgmii-id";
+	phy-mode = "rgmii-rxid";
 	phy-supply = <&vcc_3v3>;
+	tx_delay = <0x3b>;
+
+	snps,reset-gpio = <&gpio4 RK_PC2 GPIO_ACTIVE_LOW>;
+	snps,reset-active-low;
+	snps,reset-delays-us = <0 20000 100000>;
+
 	pinctrl-names = "default";
 	pinctrl-0 = <&rgmii_miim>,
 		    <&rgmii_tx_bus2>,
@@ -217,45 +248,45 @@
 	status = "okay";
 };
 
+/* PHY 只有地址与中断配置 —— 复位由 gmac1 的 snps,reset-gpio 负责 */
 &mdio1 {
 	rgmii_phy: ethernet-phy@1 {
 		compatible = "ethernet-phy-ieee802.3-c22";
 		reg = <0x1>;
-		pinctrl-names = "default";
-		pinctrl-0 = <&gmac1_rstn_l>;
-		reset-assert-us = <20000>;
-		reset-deassert-us = <100000>;
-		reset-gpios = <&gpio4 RK_PC2 GPIO_ACTIVE_LOW>;
 	};
 };
 
-/* 网口 2/2：PCIe RTL8111HS —— 参数取自上游 rk3528-hlink-h28k.dts */
+/*
+ * PCIe 控制器（厂商 dtb 里 status = "okay"，但**下面没有任何网卡子节点**）
+ *
+ * ★ 厂商 QWRT-R24.07.07 (h28x) dtb 实证 —— H28K 是**单网口**：
+ *   - 全树 `pci10ec` 出现 0 次
+ *   - /pcie@fe4f0000 下只有 legacy-interrupt-controller，
+ *     没有任何 pcie@0,0 / pcie-eth@ 子节点
+ *   - aliases 里只有 ethernet0 = /ethernet@ffbe0000 (gmac1)，无 ethernet1
+ *
+ * ⚠️ 因此本 DTS **不挂 pcie-eth 子节点**。
+ *   上一轮曾依据上游 unifreq 的 rk3528-hlink-h28k.dts 补了
+ *   `pcie-eth@10,0 { compatible = "pci10ec,8168"; }`，
+ *   厂商 dtb 证明那是**错的** —— H28K 板上没有那颗 RTL8111HS，已移除。
+ *
+ *   PCIe 口仍保留 status = "okay"（与厂商一致），供 M.2 扩展位使用；
+ *   若插入扩展网卡，PCI 枚举会自动产生 eth1，届时再补 02_network 分支。
+ *   num-lanes 与 max-link-speed 用厂商原值。
+ */
 &pcie {
 	pinctrl-names = "default";
 	pinctrl-0 = <&rtl8111hs_isolateb_l>;
 	reset-gpios = <&gpio4 RK_PA3 GPIO_ACTIVE_HIGH>;
 	vpcie3v3-supply = <&vcc_3v3>;
+	max-link-speed = <0x2>;
+	num-lanes = <0x1>;
 	status = "okay";
-
-	pcie@0,0 {
-		reg = <0x000000 0 0 0 0>;
-		#address-cells = <3>;
-		#size-cells = <2>;
-
-		pcie_eth: pcie-eth@10,0 {
-			compatible = "pci10ec,8168";
-			reg = <0x000000 0 0 0 0>;
-			realtek,led-data = <0x0870>;
-		};
-	};
 };
 
 &pinctrl {
-	gmac {
-		gmac1_rstn_l: gmac1-rstn-l {
-			rockchip,pins = <4 RK_PC2 RK_FUNC_GPIO &pcfg_pull_none>;
-		};
-	};
+	/* 注：gmac1_rstn_l 已移除 —— 厂商 dtb 把 PHY 复位配在 gmac1 的
+	 * snps,reset-gpio 上，不走 pinctrl 节点。 */
 
 	leds {
 		lan_led: lan-led {

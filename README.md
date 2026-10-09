@@ -4,7 +4,7 @@ HinLink（芯联）全系列路由器在 immortalwrt 上的设备树与板级配
 **按硬件变体一机一档，不做运行时自适应探测** —— 每个 `compatible` 对应一份独立
 DTS，`02_network` 里 `ethN` 映射写死。
 
-- **19 个机型** · 20 份 DTS · 7 份 dtsi · 4 份内核 patch · 5 个工具脚本
+- **19 个机型** · 20 份 DTS · 7 份 dtsi · 4 份内核 patch · 5 个工具脚本 · 3 份厂商 dtb
 - 覆盖 RK3568（H66K / H68K / H69K）、RK3528（H28K / H29K / HT2）、RK3588（H88K / **H89K**）
 
 > 本仓库是**支线仓库**，只提供补丁文件，不含完整 OpenWrt 源码。
@@ -75,21 +75,21 @@ python3 tools/dts_syntax_check.py <dts> <include-dirs...>   # DTS 结构
 
 | 机型 | 版本 | 屏 | 口 | 板载 WiFi |
 |---|---|---|---|---|
-| **h28k** | — | 无 | **2**：RGMII + PCIe RTL8111HS | **无** |
+| **h28k** | — | 无 | **1**：RGMII | **无** |
 | **h29k-v1.3-1.14** | v1.3 主板 | 1.14" 135×240 rot270 | **1** | SDIO |
 | **h29k-v5-1.14** | v5 主板 | 1.14" 135×240 rot90 | **1** | SDIO |
 | **h29k-v5-1.49** | v5 主板 | 1.49" **172×320 GC9307 + 电容触控** | **1** | SDIO |
 | **ht2** | — | 无 | **1** | SDIO SDR50 |
 
-> ★ **H29K 屏幕只保留 1.14 寸与 1.49 寸两种**。厂商的 1.9"（170×320）与
-> 2.8"（240×320）变体按需求移除，对应 DTS / target / 02_network 条目已一并删除。
+> ★ **RK3528 三款机型全是单网口** —— 只有板载 RGMII(gmac1)。
 >
-> ★ **H29K 全系与 HT2 都是单网口** —— 只有板载 RGMII(gmac1)，DTS 里没有 PCIe
-> 网卡节点。厂商 DTS 与上游 unifreq 的 `rk3528-hlink-h29k.dts` 同样是
-> `aliases` 只含 `ethernet0 = &gmac1`，两侧一致。
+> H28K 与 HT2 的单口结论**有厂商 dtb 直接实证**（见 §4.8）；
+> H29K 则由厂商 DTS 与上游 unifreq `rk3528-hlink-h29k.dts` 两侧印证
+> （`aliases` 都只含 `ethernet0 = &gmac1`）。
 >
-> ★ **H28K 无板载 WiFi** —— RK3528 的 WiFi 走 `sdio0`，H28K 板上没有 WiFi 模组，
-> DTS 不声明 sdio 链路，target 也不带 `kmod-aic8800s`。
+> ★ **H28K 无板载 WiFi** —— 厂商 dtb 里 `/mmc@ffbf0000` 带 `no-sdio` 属性，
+> 明确禁用 SDIO（RK3528 的 WiFi 走 sdio0）。DTS 不声明 sdio 链路，
+> target 也不带 `kmod-aic8800s`。
 
 ### RK3588 — H88K / H89K（3 个机型）
 
@@ -108,6 +108,9 @@ python3 tools/dts_syntax_check.py <dts> <include-dirs...>   # DTS 结构
 `rk3528-hinlink-h29k.dts` 从 coolsnowwolf/lede 取，compatible 为 `hinlink,opc-h29k`，
 **它的背光引脚有误**（见 §七）。仓库保留它仅作参考与映射兼容，
 实际使用请选 3 份 `h29k-v*` 拆分版。
+
+> ★ H29K 的屏幕**只保留 1.14 寸与 1.49 寸两种**。厂商的 1.9"（170×320）与
+> 2.8"（240×320）变体按需求移除，对应 DTS / target / 02_network 条目已一并删除。
 
 ---
 
@@ -140,7 +143,7 @@ RK3588
 | h68k-d / -usb / new | `eth1 eth2 eth3` | `eth0` |
 | h69k | `eth1 eth2` | `eth0` |
 | h69k-mini | `eth1 eth2 eth3` | `eth0` |
-| **h28k** | `eth0` | `eth1` |
+| **h28k** | `eth0` | —（单口） |
 | **h29k（全系）** | `eth0` | —（单口） |
 | **ht2** | `eth0` | —（单口） |
 | **h88k-v2** | `eth1` | `eth0` |
@@ -176,9 +179,60 @@ RTL8125B 是标准 PCI 设备，内核 pcie 驱动 + `kmod-r8169` 启动时自�
 各机型只按需 `status = "disabled"` 若干控制器来控制口数。
 
 > ★ **但 RK3528 相反**：`rk3528.dtsi` 里 `gmac0`/`gmac1` 都是 `status = "disabled"`，
-> 且 PCIe 控制器**不带任何网卡子节点**。H28K 必须显式挂
-> `pcie-eth@10,0 { compatible = "pci10ec,8168"; }` 才会枚举出 eth1。
-> 这条差异是本轮交叉验证的关键发现之一。
+> 且 PCIe 控制器**不带任何网卡子节点**。
+>
+> ⇒ **「控制器 status=okay」≠「有网卡」**。RK3528 上有没有网口，
+> 得看 PCIe 控制器下挂没挂 `pcie-eth`，而不是看控制器状态。
+> H28K 就是活例子：控制器 okay，但板上是单口。
+
+### 4.8 H28K：厂商 dtb 三重实证「单网口」
+
+2024 厂商固件 `QWRT-R24.07.07-rockchip-rk35xx-hinlink_h28x-squashfs-combined.img.gz`
+（1 GB，MBR + squashfs）boot 分区里有两个 dtb：
+
+| dtb | 大小 | compatible | 对应机型 |
+|---|---|---|---|
+| `vendor-h28x-a.dtb` | 59319 B | `hlink,h28k` | **H28K** |
+| `vendor-h28x-b.dtb` | 62736 B | `hinlink,ht2` | HT2 |
+
+★ 该固件同时提供 H28K 与 HT2 两份 dtb，是 RK3528 这一代最直接的厂商证据。
+
+**H28K 单网口的三重实证**（任意一条都足以否定双口说法）：
+
+```
+1. 全树 pci10ec 出现 0 次          ← 没有任何 realtek 网卡节点
+2. /pcie@fe4f0000 下只有 legacy-interrupt-controller
+   没有任何 pcie@0,0 / pcie-eth@0,0 子节点
+3. /aliases 只有 ethernet0 = /ethernet@ffbe0000（= gmac1），无 ethernet1
+```
+
+同时 `/ethernet@ffbd0000`（gmac0）`status = "disabled"`，
+`/ethernet@ffbe0000`（gmac1）`status = "okay"`。
+
+**⚠️ 这一条推翻了本仓库上一轮的做法**：
+上一轮依据上游 unifreq 的 `rk3528-hlink-h28k.dts`
+（其中挂了 `pcie_eth: pcie-eth@10,0 { compatible = "pci10ec,8168"; }`）
+给 H28K 补了 PCIe 网卡节点并判为双口 —— **厂商 dtb 证明那是错的**。
+上游那份 DTS 的 pcie-eth 可能是作者为通用 M.2 扩展位预留的，
+不代表 H28K 板上真的焊了 RTL8111HS。现已移除，`EXCLUDE` 表里也剔除了 `pcie`。
+
+**PHY 复位脚的位置也与我原先写的不一样**：
+
+| 项 | 我原先 | 厂商 dtb |
+|---|---|---|
+| `phy-mode` | `rgmii-id` | **`rgmii-rxid`** |
+| `tx_delay` | 未设 | **59 (0x3b)** |
+| PHY 复位 | PHY 节点的 `reset-gpios` + pinctrl `gmac1_rstn_l` | **gmac1 的 `snps,reset-gpio`**（GPIO4_C2 低有效），PHY 节点上没有 reset-gpios |
+| `snps,reset-delays-us` | 靠 PHY 的 `reset-assert-us`/`reset-deassert-us` | `<0 20000 100000>` |
+
+已全部改为厂商原值。`rx_delay` 厂商 dtb 里没有（走内核 dtsi 默认）。
+
+**WiFi**：厂商 dtb 里 `/mmc@ffbf0000` 带 `no-sdio` 属性 —— 明确禁用 SDIO。
+RK3528 的 WiFi 走 sdio0，所以这是厂商自己声明「本机无 WiFi」，
+与上游 `rk3528-hlink-h28k.dts` 无任何 sdio/wifi 节点一致。
+
+**HT2 同样印证单口**：`vendor-h28x-b.dtb`（`hinlink,ht2`）同样只有一个 gmac，
+与本仓库的 ht2.dts 一致。
 
 ### 4.2 SATA 与 USB3.0 二选一（仅 2022-2023 老机器）
 
@@ -347,8 +401,8 @@ target/linux/rockchip/
 │   ├── rk3568-hinlink-h69k-3eth.dts          │
 │   ├── rk3568-hinlink-h69k-mini.dts          ┘
 │   ├── rk3568-hinlink-opc.dtsi               RK3568 公共设备树（来自主线）
-│   ├── rk3528-hinlink-h28k.dts               双口（无 WiFi）
-│   ├── rk3528-hinlink-ht2.dts                单口
+│   ├── rk3528-hinlink-h28k.dts               单口（厂商 dtb 实证，无 WiFi）
+│   ├── rk3528-hinlink-ht2.dts                单口（厂商 dtb 实证）
 │   ├── rk3528-hinlink-h29k.dts               lede 版本（背光有误，仅参考）
 │   ├── rk3528-hinlink-h29k-v1.3-1.14.dts     ┐
 │   ├── rk3528-hinlink-h29k-v5-1.14.dts       │ 3 份 H29K 真实变体
@@ -357,6 +411,7 @@ target/linux/rockchip/
 │   ├── rk3588-hinlink-h88k-v3.dts            │ 3 份 RK3588
 │   ├── rk3588-hinlink-h89k.dts               ┘ 厂商 dtb + 上游 PR 双重实证
 │   ├── rk3588-hinlink.dtsi  + 5 个私有 dtsi   ← iStoreOS 私有，须连带移植
+│   ├── vendor-h28x.dtb                       厂商原始 dtb（H28K + HT2 溯源）
 │   ├── vendor-h29k-v5-1.49.dtb               厂商原始 dtb（H29K 1.49 寸溯源）
 │   └── vendor-h89k.dtb                       厂商原始 dtb（H89K 溯源）
 │
@@ -451,10 +506,22 @@ H89K 不受影响（直接 include `rk3588.dtsi`，不经过 `rk3588s-ip.dtsi`�
 | 3 | H88K v2/v3 映射四口，但 `pcie3x4` 是 PCIe x4 插槽位 / M.2 NVMe | 多配 1~2 个不存在的口 |
 | 4 | H28K DTS 只使能了 `&pcie` 控制器，**没挂 `pcie-eth` 子节点** | RK3528 的 PCIe 控制器不带网卡节点，不会枚举出 eth1，实际只有 1 个口 |
 | 5 | `h29k-v5-1.49` 的 compatible 在 02_network 写成 `h29k-v5-5-1.49`（DTS 里是 `hinlink,h29k-v5-149`） | 1.49 寸版匹配不到网口映射 |
+| 6 | **上一轮据上游 DTS 给 H28K 补的 `pcie-eth`（RTL8111HS）是错的** —— 厂商 2024 固件 dtb 三重实证无此网卡 | H28K 被误判为双口，`eth1` 永远不存在 |
 
 同时修正了 `check_port_count.py` 自身的 4 个缺陷（否则上面这些根本查不出来）：
 只取第一个 compatible、续行顶格时正则贪婪吞掉整个分支、
-「节点存在但无 status」被误判为 okay、以及未处理 `pcie3x4` 这类插槽位。
+「节点存在但无 status」被误判为 okay、以及未区分「板载网口」与
+「PCIe 插槽位 / 无网卡的控制器」（`pcie3x4` 与 H28K 的 `pcie`）。
+
+### ★ 一条方法论教训
+
+第 6 条缺陷的成因值得记下来：**上一轮把上游开源 DTS 当成了硬件事实，
+而厂商固件 dtb 才是事实**。上游 `rk3528-hlink-h28k.dts` 里那条
+`pcie-eth@10,0 { compatible = "pci10ec,8168"; }` 很可能是作者为
+**通用 M.2 扩展位**预留的模板，并不对应 H28K 板上真实焊的器件。
+
+⇒ 本仓库的纪律应当是：**厂商 dtb > 厂商 DTS > 上游开源 DTS**。
+只有在拿不到厂商 dtb 时才用上游 DTS，且必须在 README 里标注这是二手推断。
 
 ### 为什么 dtc 完整编译未验证
 
@@ -485,9 +552,12 @@ lede 那份还是**混合体**：有红外接收（v5 特征）但无电池 ADC�
 
 1. **H89K 屏显示是否偏移** —— 上游用 `x-offset=40 / y-offset=52`，
    需确认本仓库的 fbtft 1.14 寸 patch 在 H89K 上是否同样生效。
-2. **H28K 的 eth1 枚举** —— 补上 `pcie-eth` 后需实机确认 RTL8111HS 能正常识别。
-3. **H29K / HT2 是否真的只有 1 个网口** —— DTS 与上游一致，但厂商 DTS 里
-   是否有未声明的 PCIe 网卡，需插上网线看 `ls /sys/class/net/`。
+2. **H28K 的 M.2 扩展位** —— 厂商 dtb 里 PCIe 控制器 okay 但无网卡。
+   若你的 H28K 插了 M.2 网卡（RTL8111/8125），插上后 `ls /sys/class/net/`
+   应出现 eth1，此时需给 H28K 补一条 02_network 分支。
+3. **H29K 是否真的只有 1 个网口** —— H28K 已有厂商 dtb 实证，
+   但 H29K 只有厂商 DTS 与上游 DTS 两侧印证（都只含 `ethernet0`），
+   没有厂商 dtb。插上网线看 `ls /sys/class/net/` 即可确认。
 4. **老机器 a-b 的 PHY 复位是否稳定** —— `pull_none` 依赖外部电路定电平。
 5. **各机型 LED 颜色与闪烁规则**。
 6. **1.49 寸屏用哪份 fbtft 偏移 patch** —— 厂商只给了 1.9 与 1.14 两份，1.49 未提供。
@@ -525,7 +595,23 @@ python3 tools/fdtdump.py vendor-h89k.dtb spi@fecb0000   # 按路径过滤
 ```
 
 典型用途：确认某个 GPIO 到底是哪一 bank's 哪一位、某个 regulator 挂在哪路电源上。
-本轮用它纠正了 README 里 `dc-gpios` 从 `GPIO1_D4` 误记为 **`GPIO1_A4`** 的错误。
+本轮用它纠正了 README 里 `dc-gpios` 从 `GPIO1_D4` 误记为 **`GPIO1_A4`** 的错误；
+在 H28K 上更直接地证明了「上游 DTS 的 pcie-eth 是错的」。
+
+### 从厂商 img 固件里挖 dtb
+
+厂商固件是 combined img（MBR + squashfs），dtb 在 boot 分区里。流程：
+
+```sh
+gunzip -kf firmware.img.gz                 # 1 GB 镜像，trailing garbage 可忽略
+# 读 MBR 找 boot 分区（本例：part1 start=65536 sector = 32 MB）
+# 在该分区内搜 FDT magic d00dfeed，本例命中 0x1211000 与 0x1220000
+# 读 header 的 totalsize 字段截出完整 dtb
+python3 tools/fdtdump.py vendor-h28x.dtb "/aliases"     # 确认是哪个机型
+```
+
+2024 那份 `hinlink_h28x` 固件一个镜像里就带了两份 dtb（H28K + HT2），
+是 RK3528 这一代最省事的证据来源。
 
 ### 使用 check_port_count.py 时注意
 
@@ -553,6 +639,7 @@ pcie3x1 / pcie3x2 在 DTS 里通常没有显式节点，
 | 2022 厂商固件 ×5（`R22.7.19` / `R22.8.22`） | h68k a-b / c / d-f / c-usb3 |
 | 2023 厂商固件（`R23.4.20`） | h68k-d |
 | 2024 厂商固件（`QWRT-R24.07.07`） | h68k / h69k 硬件定义 |
+| **2024 厂商固件（`QWRT-R24.07.07-...-hinlink_h28x`，1 GB）** | **h28k + ht2**（boot 分区含两份 dtb，已归档 `vendor-h28x.dtb`） |
 | 2025 厂商固件（`H29K-NEW-UI-20251029`） | **h29k v5 1.49 寸触屏版** |
 | 2025 厂商固件（`immortalwrt-v1.2.2-20250608-...h89k`） | **h89k** |
 | H29K 设备树 ×5 + patch ×4（用户提供） | h29k v1.3 / v5 各屏尺寸 |

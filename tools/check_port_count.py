@@ -43,10 +43,16 @@ EXPECT = {
     'rk3568-hinlink-h69k-3eth':   3,  # 屏蔽 gmac1 -> 1xGMAC + 2xRTL8125
     'rk3568-hinlink-h69k-mini':   4,  # = H68K max，2xGMAC + 2xRTL8125
     # ---- RK3528 ----
-    'rk3528-hinlink-h28k':        2,  # RGMII(gmac1) + PCIe RTL8111HS，无 WiFi
-    # H29K 全系与 HT2 都是**单网口**：DTS 只声明 gmac1，无 PCIe 网卡节点。
+    # ★ H28K：厂商 QWRT-R24.07.07 (h28x) dtb 实证是**单网口** ——
+    #   全树无 pci10ec 节点、pcie 下无网卡子节点、aliases 只有 ethernet0。
+    #   上一轮曾按上游 unifreq 的 rk3528-hlink-h28k.dts 补 pcie-eth 判成双口，
+    #   厂商 dtb 证明那是错的。
+    'rk3528-hinlink-h28k':        1,
+    # H29K 全系与 HT2 也是**单网口**：DTS 只声明 gmac1，无 PCIe 网卡节点。
     # 厂商 DTS 与上游 unifreq rk3528-hlink-h29k.dts 均为 aliases 只含
     # ethernet0 = &gmac1，两侧一致。
+    # ★ vendor-h28x.dtb 里的 HT2（compatible = "hinlink,ht2"）同样只有
+    #   一个 gmac，与本仓库一致。
     'rk3528-hinlink-h29k-v1.3-1.14': 1,
     'rk3528-hinlink-h29k-v5-1.14':   1,
     'rk3528-hinlink-h29k-v5-1.49':   1,
@@ -130,6 +136,10 @@ EXCLUDE = {
     # 另外 gmac1 在 rk3588.dtsi 里默认 okay，但 H88K 只有 gmac0 板载 RGMII，
     # 不剔除会被算成 4 口。板载 = gmac0 + pcie2x1l1 + pcie2x1l2 = 3 口。
     'rk3588-hinlink-h88k-v3': ('pcie3x4', 'gmac1'),
+    # H28K：PCIe 控制器 status="okay"（厂商原值，供 M.2 扩展位用），
+    # 但厂商 dtb 里它下面**没有任何网卡子节点** ⇒ 不能计入网口数。
+    # 这就是「控制器 okay ≠ 有网卡」的典型例子。
+    'rk3528-hinlink-h28k': ('pcie',),
 }
 
 

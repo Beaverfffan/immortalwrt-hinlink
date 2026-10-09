@@ -109,7 +109,10 @@ hinlink,opc-h28k|\
 	hinlink,h28k|\
 	hlink,h28k|\
 	linkstar,h28k)
-		ucidef_set_interfaces_lan_wan 'eth0' 'eth1'
+		# H28K：**单网口** —— 只有板载 RGMII(gmac1)
+		# 厂商 QWRT-R24.07.07(h28x) dtb 三重实证：无 pci10ec 节点、
+		# pcie 下无网卡子节点、aliases 只有 ethernet0。⇒ 不会有 eth1。
+		ucidef_set_interfaces_lan_wan 'eth0'
 		;;
 
 
