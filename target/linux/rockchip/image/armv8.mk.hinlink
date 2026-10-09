@@ -46,130 +46,126 @@ define Device/hinlink_h6xk_sdio_ap6256
 endef
 
 
+# ===== H68K / H69K（RK3568）=====
+#
+# ★ SATA / USB3.0 二选一（用户确认，仅 2022-2023 老机器）
+#
+#   RK3568 硬件复用（rk3568.dtsi 实证）：
+#       sata0   phys = <&combphy0 PHY_TYPE_SATA>    (phy@fe820000)
+#       USB3.0  同样需要 combphy0 作 PHY_TYPE_USB3
+#       combphy 同一时刻只能是一种 PHY_TYPE  =>  SATA 与 USB3.0 互斥
+#
+#   ⇒ 老机器（68k 的 a-b / c / d）必须拆两个 target：
+#       基础版（USB3.0）：&sata0 disabled
+#       -sata 版：       &sata0 okay，USB3.0 不可用
+#
+#   ★ 该复用只涉及 2022-2023 老机器。
+#     新机 h68k-new 与 h69k 系不涉及，SATA 与 USB3.0 可同时使用。
+#   ★ 网口数量不受影响：2.5G 网卡走独立的 pcie30phy（phy@fe8c0000），
+#     与 combphy0 无关。
+#
+# ★ H69K 型号谱系（用户确认）
+#   H69K       三网口 = 1×GMAC(gmac0) + 2×RTL8125 2.5G
+#   H69K-mini  四网口 = 同上（= H68K max）
+#   ——屏蔽的是 gmac1（少一路 GMAC），两路 PCIe 始终保留。
+#   原「双网口 h69k-mini」是本方案臆造，已删除。
+
+# ---- H68K 老机器：a-b（2022 双千兆，2 口）----
+
 define Device/hinlink_opc-h68k-a
-
   $(Device/hinlink_h6xk_sdio_ap6256)
-
-  DEVICE_MODEL := H68K A/B
-
-  DEVICE_ALT0_VENDOR := LinkStar
-
-  DEVICE_ALT0_MODEL := H68K A/B
-
+  DEVICE_MODEL := OPC-H68K a-b (2022, USB3.0)
   DEVICE_DTS := rk3568-hinlink-h68k-a
-
-  UBOOT_DEVICE_NAME := hinlink-h68k-a-rk3568
-
+  UBOOT_DEVICE_NAME := hinlink-h68k-rk3568
 endef
-
 TARGET_DEVICES += hinlink_opc-h68k-a
 
+define Device/hinlink_opc-h68k-a-sata
+  $(Device/hinlink_opc-h68k-a)
+  DEVICE_MODEL := OPC-H68K a-b (2022, SATA)
+  DEVICE_DTS := rk3568-hinlink-h68k-a-sata
+  DEVICE_PACKAGES += kmod-ata-ahci-dwc
+endef
+TARGET_DEVICES += hinlink_opc-h68k-a-sata
+
+# ---- H68K 老机器：c（2022 四网口）----
 
 define Device/hinlink_opc-h68k-c
-
   $(Device/hinlink_h6xk_m2_wifi)
-
-  DEVICE_MODEL := H68K C/D/F
-
-  DEVICE_ALT0_VENDOR := LinkStar
-
-  DEVICE_ALT0_MODEL := H68K C/D/F
-
+  DEVICE_MODEL := OPC-H68K c (2022, USB3.0)
   DEVICE_DTS := rk3568-hinlink-h68k-c
-
-  UBOOT_DEVICE_NAME := hinlink-h68k-c-rk3568
-
+  UBOOT_DEVICE_NAME := hinlink-h68k-rk3568
+  DEVICE_PACKAGES += kmod-r8169
 endef
-
 TARGET_DEVICES += hinlink_opc-h68k-c
 
+define Device/hinlink_opc-h68k-c-sata
+  $(Device/hinlink_opc-h68k-c)
+  DEVICE_MODEL := OPC-H68K c (2022, SATA)
+  DEVICE_DTS := rk3568-hinlink-h68k-c-sata
+  DEVICE_PACKAGES += kmod-ata-ahci-dwc
+endef
+TARGET_DEVICES += hinlink_opc-h68k-c-sata
+
+# ---- H68K 老机器：c-usb3（2022.8，本身即 USB3.0 改型，不再拆 SATA）----
 
 define Device/hinlink_opc-h68k-c-usb3
-
-  $(Device/hinlink_h6xk_m2_wifi)
-
-  DEVICE_MODEL := H68K C USB3
-
-  DEVICE_ALT0_VENDOR := LinkStar
-
-  DEVICE_ALT0_MODEL := H68K C USB3
-
+  $(Device/hinlink_opc-h68k-c)
+  DEVICE_MODEL := OPC-H68K c-usb3 (2022.8, USB3.0)
   DEVICE_DTS := rk3568-hinlink-h68k-c-usb3
-
-  UBOOT_DEVICE_NAME := hinlink-h68k-c-usb3-rk3568
-
 endef
-
 TARGET_DEVICES += hinlink_opc-h68k-c-usb3
 
+# ---- H68K 老机器：d（2023.4 推荐版）----
 
 define Device/hinlink_opc-h68k-d
-
   $(Device/hinlink_h6xk_m2_wifi)
-
-  DEVICE_MODEL := H68K D
-
-  DEVICE_ALT0_VENDOR := LinkStar
-
-  DEVICE_ALT0_MODEL := H68K D
-
+  DEVICE_MODEL := OPC-H68K d (2023.4, USB3.0)
   DEVICE_DTS := rk3568-hinlink-h68k-d
-
-  UBOOT_DEVICE_NAME := hinlink-h68k-d-rk3568
-
+  UBOOT_DEVICE_NAME := hinlink-h68k-rk3568
+  DEVICE_PACKAGES += kmod-r8169
 endef
-
 TARGET_DEVICES += hinlink_opc-h68k-d
 
+define Device/hinlink_opc-h68k-d-sata
+  $(Device/hinlink_opc-h68k-d)
+  DEVICE_MODEL := OPC-H68K d (2023.4, SATA)
+  DEVICE_DTS := rk3568-hinlink-h68k-d-sata
+  DEVICE_PACKAGES += kmod-ata-ahci-dwc
+endef
+TARGET_DEVICES += hinlink_opc-h68k-d-sata
+
+# ---- H68K 新机器（2023末~2024）：不涉及 SATA/USB3 复用，两者可同时用 ----
 
 define Device/hinlink_opc-h68k-new
-
   $(Device/hinlink_h6xk_sdio_aic8800)
-
-  DEVICE_MODEL := H68K (2023 new board)
-
-  DEVICE_ALT0_VENDOR := LinkStar
-
-  DEVICE_ALT0_MODEL := H68K
-
+  DEVICE_MODEL := OPC-H68K new (2023末~2024)
   DEVICE_DTS := rk3568-hinlink-h68k-new
-
-  UBOOT_DEVICE_NAME := hinlink-h68k-new-rk3568
-
+  UBOOT_DEVICE_NAME := hinlink-h68k-rk3568
+  DEVICE_PACKAGES += kmod-r8169 kmod-ata-ahci-dwc
 endef
-
 TARGET_DEVICES += hinlink_opc-h68k-new
 
+# ---- H69K：三网口 ----
 
 define Device/hinlink_opc-h69k
-
   $(Device/hinlink_h6xk_sdio_aic8800)
-
-  DEVICE_MODEL := H69K (5G)
-
-  DEVICE_DTS := rk3568-hinlink-h69k
-
+  DEVICE_MODEL := H69K (三网口, 5G)
+  DEVICE_DTS := rk3568-hinlink-h69k-3eth
   UBOOT_DEVICE_NAME := hinlink-h69k-rk3568
-
-  DEVICE_PACKAGES += kmod-hwmon-pwmfan kmod-usb-serial-option
-
+  DEVICE_PACKAGES += kmod-hwmon-pwmfan kmod-usb-serial-option kmod-r8169
 endef
-
 TARGET_DEVICES += hinlink_opc-h69k
 
+# ---- H69K-mini：四网口（= H68K max）----
 
 define Device/hinlink_opc-h69k-mini
-
-  $(Device/hinlink_h6xk_m2_wifi)
-
-  DEVICE_MODEL := H69K mini
-
+  $(Device/hinlink_h6xk_sdio_aic8800)
+  DEVICE_MODEL := H69K mini (四网口 = H68K max, 5G)
   DEVICE_DTS := rk3568-hinlink-h69k-mini
-
-  UBOOT_DEVICE_NAME := hinlink-h69k-mini-rk3568
-
+  UBOOT_DEVICE_NAME := hinlink-h69k-rk3568
+  DEVICE_PACKAGES += kmod-hwmon-pwmfan kmod-usb-serial-option kmod-r8169
 endef
-
 TARGET_DEVICES += hinlink_opc-h69k-mini
 
 # ===== RK3528 机型 =====

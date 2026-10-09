@@ -8,9 +8,12 @@
 # 命名对照（厂商曾用过的 compatible 前缀）：
 #   hinlink,opc-h68k-a / -c      2022 五改型（a-b / c-d / c-d-f / c-usb3）
 #   hinlink,opc-h68k-d            2023.4 推荐版
-#   hinlink,opc-h68k-new          2023末~2024（与 H69K 共底板）
-#   hinlink,opc-h69k              装 USB 5G 模组的真 69K
-#   hinlink,opc-h69k-mini         体积精简版
+#   hinlink,opc-h68k-new          2023末~2024（与 H69K 共底板，不涉及 SATA/USB3 复用）
+#   hinlink,opc-h69k              装 USB 5G 模组的真 69K，**三网口**
+#   hinlink,opc-h69k-mini         **四网口**（= H68K max），不涉及 SATA/USB3 复用
+#
+# ★ SATA 变体（仅 2022-2023 老机器 a-b / c / d）：
+#   后缀 -sata，combphy0 让给 SATA，USB3.0 不可用。网口映射与基础版相同。
 #
 # 网口枚举前提（immortalwrt 6.18 内核 dtc顺序）：
 #   gmac0     -> eth0   (SoC 内部控制器，顺序固定)
@@ -25,6 +28,7 @@ case "$board" in
 # ---- H68K A/B：2022 双千兆版，仅 2 个口----
 
 hinlink,opc-h68k-a|\
+	hinlink,opc-h68k-a-sata|\
 	linkstar,opc-h68k-a)
 		ucidef_set_interfaces_lan_wan 'eth1' 'eth0'
 		;;
@@ -33,6 +37,7 @@ hinlink,opc-h68k-a|\
 # ---- H68K C/D/F：2022 四网口版，2×RTL8125 ----
 
 hinlink,opc-h68k-c|\
+	hinlink,opc-h68k-c-sata|\
 	linkstar,opc-h68k-c)
 		ucidef_set_interfaces_lan_wan 'eth0 eth2 eth3' 'eth1'
 		;;
@@ -48,6 +53,7 @@ hinlink,opc-h68k-c-usb3)
 # ---- H68K D：2023.4 推荐版，WAN = eth0（网口全识别）----
 
 hinlink,opc-h68k-d|\
+	hinlink,opc-h68k-d-sata|\
 	linkstar,opc-h68k-d)
 		ucidef_set_interfaces_lan_wan 'eth1 eth2 eth3' 'eth0'
 		;;
@@ -60,17 +66,21 @@ hinlink,opc-h68k-new)
 		;;
 
 
-# ---- H69K：屏蔽 1 个 GMAC ----
+# ---- H69K：三网口（屏蔽 gmac1，保留 2 路 RTL8125）----
+# eth0 = gmac0（板载 RGMII）；eth2/eth3 = 两路 PCIe 2.5G
+# aliases ethernet0 = &gmac0 => 板载口是 eth0
 
 hinlink,opc-h69k)
 		ucidef_set_interfaces_lan_wan 'eth1 eth2' 'eth0'
 		;;
 
 
-# ---- H69K mini：精简版 ----
+# ---- H69K-mini：四网口（= H68K max）----
+# 网络构成与 H69K 相同（1×GMAC + 2×RTL8125），口数相同；
+# 差异在形态与 5G 模组，不在网口数量。
 
 hinlink,opc-h69k-mini)
-		ucidef_set_interfaces_lan_wan 'eth1' 'eth0'
+		ucidef_set_interfaces_lan_wan 'eth1 eth2' 'eth0'
 		;;
 
 
@@ -96,9 +106,12 @@ esac
 # 从 eMMC CID 生成稳定的 MAC
 case "$board" in
 hinlink,opc-h68k-a|\
+hinlink,opc-h68k-a-sata|\
 hinlink,opc-h68k-c|\
+hinlink,opc-h68k-c-sata|\
 hinlink,opc-h68k-c-usb3|\
 hinlink,opc-h68k-d|\
+hinlink,opc-h68k-d-sata|\
 hinlink,opc-h68k-new|\
 hinlink,opc-h69k|\
 hinlink,opc-h69k-mini|\

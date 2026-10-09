@@ -9,80 +9,59 @@
 case "$board" in
 
 
-# ---- H68K A/B ----
+# ---- H68K A/B（2022 双千兆，2 口）----
+# 注：SATA 变体 LED 与基础版相同，仅 combphy0 用途不同
 
 hinlink,opc-h68k-a|\
-	
-
-linkstar,opc-h68k-a
-
+	hinlink,opc-h68k-a-sata|\
+	linkstar,opc-h68k-a)
 	ucidef_set_led_default "power" "POWER" "green:work" "1"
 	ucidef_set_led_netdev "wan" "WAN" "blue:net" "eth0"
-
 	;;
 
-
-# ---- H68K C/D/F ----
+# ---- H68K C/D/F（2022 四网口）----
 
 hinlink,opc-h68k-c|\
-	
-
-linkstar,opc-h68k-c
-
+	hinlink,opc-h68k-c-sata|\
+	linkstar,opc-h68k-c)
 	ucidef_set_led_netdev "wan" "WAN" "blue:net" "eth3"
 	ucidef_set_led_ide "disk" "DISK" "yellow:disk"
-
 	;;
 
+# ---- H68K C USB3（2022.4 网口 + USB3.0，本身即USB3 版，无 SATA 变体）----
 
-# ---- H68K C USB3 ----
-
-hinlink,opc-h68k-c-usb3
-
+hinlink,opc-h68k-c-usb3)
 	ucidef_set_led_netdev "wan" "WAN" "blue:net" "eth3"
-
 	;;
 
-
-# ---- H68K D ----
+# ---- H68K D（2023.4 推荐版，WAN = eth0）----
 
 hinlink,opc-h68k-d|\
-	
-
-linkstar,opc-h68k-d
-
+	hinlink,opc-h68k-d-sata|\
+	linkstar,opc-h68k-d)
 	ucidef_set_led_netdev "wan" "WAN" "blue:net" "eth0"
-
 	;;
 
+# ---- H68K new（2023末~2024）----
+# 不涉及 SATA/USB3 复用，两者可同时使用
 
-# ---- H68K new ----
-
-hinlink,opc-h68k-new
-
+hinlink,opc-h68k-new)
 	ucidef_set_led_netdev "wan" "WAN" "blue:net" "eth0"
-
 	;;
 
+# ---- H69K（三网口）----
+# 不涉及 SATA/USB3 复用
 
-# ---- H69K ----
-
-hinlink,opc-h69k
-
+hinlink,opc-h69k)
 	ucidef_set_led_netdev "wan" "WAN" "blue:net" "eth0"
-
 	;;
 
+# ---- H69K-mini（四网口= H68K max）----
+# 不涉及 SATA/USB3 复用
 
-# ---- H69K mini ----
-
-hinlink,opc-h69k-mini
-
+hinlink,opc-h69k-mini)
 	ucidef_set_led_netdev "wan" "WAN" "blue:net" "eth0"
-
 	;;
-
-
 # ---- H66K ----
 
 hinlink,h66k

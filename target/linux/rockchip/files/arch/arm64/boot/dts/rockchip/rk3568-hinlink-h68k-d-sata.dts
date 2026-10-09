@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 /*
- * HinLink OPC-H68K C USB3
+ * HinLink OPC-H68K D
  *
  * HinLink 适配for immortalwrt —— 每机型独立 DTS，不做自适应。
  *
- * 硬件事实来源：厂商 2022 R22.8.22 (armv8-h68k-c) 固件 dtb（已解包反编译逐项核对）
+ * 硬件事实来源：厂商 2023 R23.4.20 固件 dtb（已解包反编译逐项核对）
  * 蓝本：OpenWrt 主线 rk3568-hinlink-h68k.dts
  *
- * 2022.8 版：C/D/F 基础上改USB 3.0
+ * 2023.4 推荐版：2×RTL8125 2.5G，WAN 从 eth1 改为 eth0（网口全识别）
+ *
+ * ★ SATA 变体：combphy0 让给 SATA，USB3.0 不可用（见文件末尾说明）
  */
 
 /dts-v1/;
@@ -15,8 +17,8 @@
 #include "rk3568-hinlink-opc.dtsi"
 
 / {
-	model = "HinLink OPC-H68K C USB3";
-	compatible = "hinlink,opc-h68k-c-usb3", "rockchip,rk3568";
+	model = "HinLink OPC-H68K (SATA) D";
+	compatible = "hinlink,opc-h68k-d-sata", "rockchip,rk3568";
 
 	aliases {
 		ethernet0 = &gmac0;
@@ -96,21 +98,23 @@
 };
 
 /* ============================================================
- * 本改型即「USB3.0 版」—— combphy0 已分配给 USB3.0
+ * SATA 变体：combphy0 让给 SATA，USB3.0 不可用
  *
- * 2022.8 的 c-usb3 就是在 C/D/F 基础上把 SATA 口改成 USB 3.0 的改型，
- * 因此不需要再拆 SATA 变体。需要 SATA 的机器请用 rk3568-hinlink-h68k-c-sata.dts
- * （或 -a-sata / -d-sata）。
+ * ★ RK3568 硬件复用关系（rk3568.dtsi 实证）：
+ *     sata0    phys = <&combphy0 PHY_TYPE_SATA>   (phy@fe820000)
+ *     USB3.0   也需要 combphy0 作 PHY_TYPE_USB3
+ *   combphy 同一时刻只能是一种 PHY_TYPE ⇒ SATA 与 USB3.0 **二选一**。
  *
- * ★ RK3568 硬件复用（rk3568.dtsi 实证）：
- *     sata0  phys = <&combphy0 PHY_TYPE_SATA>   (phy@fe820000)
- *     USB3.0 也需要 combphy0 作 PHY_TYPE_USB3
- *   combphy 同一时刻只能一种 PHY_TYPE ⇒ 二选一。
+ * 本变体使能 sata0（继承主线 opc.dtsi 的 status="okay"）。
+ * 需要 USB3.0 的机器请用同名基础版本（无 -sata 后缀）。
  *
- * ★ 该复用只存在于 2022-2023 老机器（68k 的 a-b / c / d）。
- *   新机 h68k-new 与 h69k 系不涉及，两者可同时使用。
+ * ★ 网口不受影响：2.5G 网卡走独立的 pcie30phy（phy@fe8c0000），
+ *   与 combphy0 无关，因此启用 SATA 不改变网口数量。
+ *
+ * ★ 该复用只存在于 2022-2023 老机器（68k 的 a-b / c / c-usb3 / d）。
+ *   新机 h68k-new 与 h69k 系不涉及此复用。
  * ============================================================ */
 
 &sata0 {
-	status = "disabled";
+	status = "okay";
 };
