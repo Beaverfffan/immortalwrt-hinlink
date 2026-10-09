@@ -107,14 +107,12 @@ hinlink,h66k|\
 hinlink,h28k|\
 linkstar,h28k|\
 hinlink,opc-h29k|\
-hinlink,h29k-v13|\
-hinlink,h29k-v13-114|\
+hinlink,h29k-v1.3|\
+hinlink,h29k-v1.3-114|\
 hinlink,h29k-v5|\
 hinlink,h29k-v5-114|\
-hinlink,h29k-v5-28|\
-hinlink,opc-ht2|\
-hinlink,h88k-v2|\
-hinlink,h88k-v3)
+hinlink,h29k-v5-1.49|\
+hinlink,h29k-v5-28)
 		wan_mac=$(macaddr_generate_from_mmc_cid mmcblk0)
 		lan_mac=$(macaddr_add "$wan_mac" 1)
 		;;
@@ -129,12 +127,13 @@ hinlink,opc-h28k|\
 		;;
 
 hinlink,opc-h29k|\
-	hinlink,h29k-v13|\
-	hinlink,h29k-v13-114|\
+	hinlink,h29k-v1.3|\
+	hinlink,h29k-v1.3-114|\
 	hinlink,h29k-v5|\
 	hinlink,h29k-v5-114|\
+	hinlink,h29k-v5-1.49|\
 	hinlink,h29k-v5-28)
-		# H29K：板载 RGMII 为 eth0，PCIe 为 eth1
+		# H29K 全系（含 v1.3 / v5 各屏）：板载 RGMII 为 eth0（aliases ethernet0=&gmac1），PCIe 为 eth1
 		ucidef_set_interfaces_lan_wan 'eth1' 'eth0'
 		;;
 

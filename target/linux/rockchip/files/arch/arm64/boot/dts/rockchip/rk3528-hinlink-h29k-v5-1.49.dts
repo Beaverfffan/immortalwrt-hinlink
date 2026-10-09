@@ -7,9 +7,8 @@
 #include "rk3528.dtsi"
 
 / {
-	model = "HINLINK H29K (h29k-v5-28)";
-	// 屏幕: 2.8"  240x320
-	compatible = "hinlink,h29k-v5-28", "rockchip,rk3528";
+	model = "HINLINK H29K (v5, 1.49 inch touch)";
+	compatible = "hinlink,h29k-v5-149", "rockchip,rk3528";
 
 	aliases {
 		mmc0 = &sdhci;
@@ -309,9 +308,6 @@
 				<1 RK_PB7 2 &pcfg_pull_none_drv_level_2>;
 		};
 
-		lcd_backlight_pin: lcd-backlight-pin {
-            rockchip,pins = <0 RK_PA0 RK_FUNC_GPIO &pcfg_pull_none>;  // 背光引脚
-        };
 	};
 
 };
@@ -438,10 +434,19 @@
 };
 
 &saradc {
-	compatible = "rockchip,rk3528-saradc";
 	vref-supply = <&vcc_1v8>;
 	status = "okay";
+	
+
+	// adc_channel0: adc-channel@0 {
+        // rockchip,channel-id = <0>;
+        // rockchip,channel-name = "adc0";
+        // rockchip,channel-properties = <1>; /* 表示通道 0 用于电池电压测量 */
+    // };
 };
+
+
+
 
 &spi1 {  // 定义SPI1制器节点
 	#address-cells = <1>;  // 定义子节点的地址单元数量为1
@@ -450,69 +455,47 @@
 	assigned-clock-rates = <200000000>;  // 为SPI1分配的时钟频率，200MHz
 	num-cs = <1>;  // SPI4控制器最多支持1个CS（芯片选择）引脚
 	pinctrl-names = "default";  // 定义管脚控制组名称为"default"
-	pinctrl-0 = <&spi1_custom_pins &lcd_backlight_pin>; // 分配SPI引脚和CS引脚
+	pinctrl-0 = <&spi1_custom_pins>; // 分配SPI引脚和CS引脚
 	status = "okay";  // 激活SPI4控制器
 
 	st7789v_panel: panel@0 {  // 定义LCD面板的子节点
-		compatible = "sitronix,st7789v";  // 指定LCD面板兼容ST7789V驱动器
+		compatible = "sitronix,gc9307";   // 1.49 寸触屏版用 GC9307（旧版为 ST7789V）
 		reg = <0>;  // SPI设备地址，通常为0
 		power-supply = <&vcc_3v3_lcd>;  // LCD面板的电源输入，连接到3V电源
 
 		pinctrl-names = "default";  // 定义管脚控制组名称为"default"
 		pinctrl-0 = <&lcd_dc_pin>;  // 分配数据/命令选择引脚
 		dc-gpios = <&gpio1 RK_PB4 GPIO_ACTIVE_HIGH>; // DC 引脚
-		backlight-gpios = <&gpio0 RK_PA0 GPIO_ACTIVE_LOW>;  // 背光引脚
+		// 1.49 寸触屏版改用 PWM 调光（256 级），非 GPIO 恒亮
+		backlight = <&backlight>;
 		// fps = <20>;  // 刷新率，未启用
 
 		
+		/* 1.9 微雪 */
+        //spi-max-frequency = <10000000>;  // 10Mhz
+		//width = <172>;  // 显示屏宽度
+		//height = <320>;  // 显示屏高度
+		//buswidth = <8>;  // 设置显示屏的总线宽度为8位
+		//rotate = <270>;
 
-		/* 2.8 屏幕 new */
+
+		/* 1.9 new */
       	spi-max-frequency = <6000000>;  // 10Mhz
-		width = <240>;  // 显示屏宽度
+		width = <172>;  // 显示屏宽度
 		height = <320>;  // 显示屏高度
 		buswidth = <8>;  // 设置显示屏的总线宽度为8位
 		rotate = <270>;
 		spi-cpol;  // SPI时钟极性
 		spi-cpha;  // SPI时钟相位
 
-
-
-		/* 1.9 new */
-      	//spi-max-frequency = <6000000>;  // 10Mhz
-		//width = <170>;  // 显示屏宽度
+		/* 1.9 new 线序不对版本 */
+      	//spi-max-frequency = <600000>;  // 10Mhz
+		//width = <172>;  // 显示屏宽度
 		//height = <320>;  // 显示屏高度
 		//buswidth = <8>;  // 设置显示屏的总线宽度为8位
 		//rotate = <270>;
 		//spi-cpol;  // SPI时钟极性
 		//spi-cpha;  // SPI时钟相位
-
-
-		/* 1.14 默认版本  6Mhz */
-        //spi-max-frequency = <6000000>;  // 最大SPI通信频率设置为6MHz
-		//width = <135>;  // 显示屏宽度
-		//height = <240>;  // 显示屏高度
-		//// fps = <20>;  // 刷新率，未启用
-		//buswidth = <8>;  // 设置显示屏的总线宽度为8位
-		//rotate = <90>;  // 显示旋转90度
-		/* debug: 0-7 */
-		//debug = <0>;  // 调试级别设置，0表示关闭调试
-		//spi-cpol;  // SPI时钟极性
-		//spi-cpha;  // SPI时钟相位
-
-
-
-		/* 1.9 微雪线序不对版本  */
-		//spi-max-frequency = <10000000>;  // 10Mhz
-      	//spi-max-frequency = <6000000>;  // 10Mhz
-		//width = <170>;  // 显示屏宽度
-		//height = <320>;  // 显示屏高度
-		//buswidth = <8>;  // 设置显示屏的总线宽度为8位
-		//rotate = <270>;
-		//spi-cpol;  // SPI时钟极性
-		//spi-cpha;  // SPI时钟相位
-
-
-
 
 
 		/* debug: 0-7 */
@@ -521,3 +504,72 @@
 	};
 };
 
+/* ---- 1.49 寸触屏版新增：PWM 背光 ---- */
+
+&pwm3 {
+	status = "okay";
+	pinctrl-names = "active";
+	pinctrl-0 = <&pwm3m0_pins>;
+};
+
+backlight: backlight {
+	compatible = "pwm-backlight";
+	pinctrl-names = "backlight";
+	pwms = <&pwm3 0 25000>;   /* 厂商原值：pwm3 通道0，25kHz */
+	brightness-levels = <0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15
+		16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33
+		34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51
+		52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69
+		70 71 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87
+		88 89 90 91 92 93 94 95 96 97 98 99 100 101 102 103
+		104 105 106 107 108 109 110 111 112 113 114 115 116 117
+		118 119 120 121 122 123 124 125 126 127 128 129 130 131
+		132 133 134 135 136 137 138 139 140 141 142 143 144 145
+		146 147 148 149 150 151 152 153 154 155 156 157 158 159
+		160 161 162 163 164 165 166 167 168 169 170 171 172 173
+		174 175 176 177 178 179 180 181 182 183 184 185 186 187
+		188 189 190 191 192 193 194 195 196 197 198 199 200 201
+		202 203 204 205 206 207 208 209 210 211 212 213 214 215
+		216 217 218 219 220 221 222 223 224 225 226 227 228 229
+		230 231 232 233 234 235 236 237 238 239 240 241 242 243
+		244 245 246 247 248 249 250 251 252 253 254 255>;
+	default-brightness-level = <153>;
+};
+
+&pinctrl {
+	pwmpanel {
+	};
+
+	touchscreen {
+		tp_int_pin: tp-int-pin {
+			rockchip,pins = <4 RK_PB2 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+
+		tp_reset_pin: tp-reset-pin {
+			rockchip,pins = <4 RK_PB3 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+};
+
+/* ---- 1.49 寸触屏版新增：AXS5106 电容触控（I2C1 @ 0x63）---- */
+
+&i2c1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c1m0_xfer &tp_int_pin &tp_reset_pin>;
+	status = "okay";
+
+	touchscreen@63 {
+		compatible = "chipone,axs5106";
+		reg = <0x63>;
+		interrupt-parent = <&gic>;
+		interrupts = <RK_PB2 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "touchscreen";
+		irq-gpios = <&gpio4 RK_PB2 GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&gpio4 RK_PB3 GPIO_ACTIVE_LOW>;
+		touchscreen-size-x = <172>;
+		touchscreen-size-y = <320>;
+		touchscreen-inverted-x;
+		touchscreen-inverted-y;
+		status = "okay";
+	};
+};

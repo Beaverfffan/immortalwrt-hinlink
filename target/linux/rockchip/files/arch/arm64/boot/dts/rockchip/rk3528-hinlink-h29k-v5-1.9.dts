@@ -7,7 +7,8 @@
 #include "rk3528.dtsi"
 
 / {
-	model = "HINLINK H29K (h29k-v5)";
+	model = "HINLINK H29K v5 (1.9 inch)";
+	// 屏幕: 1.9"  170x320 rot270
 	// 屏幕: 1.9"  170x320
 	compatible = "hinlink,h29k-v5", "rockchip,rk3528";
 

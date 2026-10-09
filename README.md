@@ -473,3 +473,90 @@ lede 那份还是**混合体**：有红外接收（v5 特征）但无电池 ADC�
 ### 验证
 
 5 个变体 DTS 语法全部 PASS；对照组（lede 原版 + 主线 H68K）PASS。
+---
+
+## H29K 硬分叉 + 1.49 寸触屏版（第四批）
+
+用户提供新固件 `H29K-NEW-UI-20251029.rar`（637MB raw img），
+从中解出 **1.49 寸电容触屏版**的真实参数。
+
+### 命名规则变更
+
+按要求改为 **`h29k` + 主板版本 + 屏幕大小**，v1.3 与 v5 各自独立 target，
+不做自适应。1.14 寸排在各target 第一位。
+
+| # | 机型 | DTS | compatible | 屏幕 | 板级屏参数 |
+|---|---|---|---|---|---|
+| 1 | **h29k-v1.3-1.14** | `rk3528-hinlink-h29k-v1.3-1.14.dts` | `hinlink,h29k-v1.3-114` | 1.14" | 135×240 rot270 ST7789V |
+| 2 | h29k-v1.3-1.9 | `rk3528-hinlink-h29k-v1.3-1.9.dts` | `hinlink,h29k-v1.3` | 1.9" | 170×320 rot270 ST7789V |
+| 3 | **h29k-v5-1.14** | `rk3528-hinlink-h29k-v5-1.14.dts` | `hinlink,h29k-v5-114` | 1.14" | 135×240 **rot90** ST7789V |
+| 4 | **h29k-v5-1.49** | `rk3528-hinlink-h29k-v5-1.49.dts` | `hinlink,h29k-v5-149` | 1.49" | 172×320 rot270 **GC9307 + 触控 + PWM 背光** |
+| 5 | h29k-v5-1.9 | `rk3528-hinlink-h29k-v5-1.9.dts` | `hinlink,h29k-v5` | 1.9" | 170×320 rot270 ST7789V |
+| 6 | h29k-v5-2.8 | `rk3528-hinlink-h29k-v5-2.8.dts` | `hinlink,h29k-v5-28` | 2.8" | 240×320 rot270 ST7789V |
+
+### ★ 1.49 寸触屏版：与旧 5 份的本质差异
+
+从 `H29K-NEW-UI-20251029.img` 解出的 dtb（`hinlink,h29k`，40194 B）拿到：
+
+| 项 | 旧 5 份（1.9/1.14/2.8） | **1.49 寸触屏版** |
+|---|---|---|
+| 屏驱动 | `sitronix,st7789v` | **`sitronix,gc9307`** |
+| 分辨率 | 170×320 / 135×240 / 240×320 | **172×320** |
+| 触控 | ✗ | **`chipone,axs5106`@ I2C1(0x63)** |
+| 背光 | `backlight-gpios = <&gpio0 RK_PA0 ACTIVE_LOW>`（GPIO 恒亮） | **`pwm-backlight`，256 级调光** |
+
+**背光从 GPIO 改成 PWM 是最大的架构差异** —— 这意味着 1.49 寸版能调亮度，
+旧 5 份不能。且PWM 占用了 GPIO4_B6，与旧版的 GPIO0_PA0 完全不同。
+
+**触控详细参数**（全部来自厂商 dtb）：
+```
+compatible  = "chipone,axs5106"
+reg         = <0x63>                    ← I2C 地址
+bus         = i2c1 (0xffa58000)        ← 只有 i2c1 被使能
+interrupts  = <GPIO4_B2 IRQ_TYPE_HIGH>
+irq-gpios   = <&gpio4 RK_PB2 ACTIVE_HIGH>
+reset-gpios = <&gpio4 RK_PB3 ACTIVE_LOW>
+size-x/y    = 172 / 320
+inverted-x  = yes          ← X 轴反向
+inverted-y  = yes          ← Y 轴反向
+```
+
+**PWM 背光参数**：
+```
+backlight: pwm-backlight
+pwms       = <&pwm3 0 25000>            ← pwm3 通道0，25kHz
+pinctrl-0  = <&pwm3m0_pins>             ← GPIO4_B6 (pwm3m0)
+brightness-levels = 0..255               ← 256 级
+default-brightness-level = 153          ← 60%
+```
+
+### ★ 我在生成过程中犯的错（已按厂商值修正）
+
+拿到dtb 后我**先猜后改**，猜错了三处，全部按厂商实际值修正：
+
+| 我最初写的 | 厂商实际值 | 后果 |
+|---|---|---|
+| `&pwm4` + GPIO4_B1 | **`&pwm3` + `pwm3m0_pins`(GPIO4_B6)** | 背光不亮 |
+| `pwm3 RK_FUNC_PWM2 &pcfg_pull_none` | **`pwm3m0_pins`（内核已有label）+ func 0x01** | 需自行定义 pinctrl |
+| `i2c1m2_xfer_les_pins` | **`i2c1m0_xfer`** | 内核无此 label，编译失败 |
+| `interrupts = <RK_PA10 ...>` | **`<RK_PB2 IRQ_TYPE_LEVEL_HIGH>`** | 触控不响应 |
+
+**判据**：反编译 dtb 得到的**十六进制数值**要换算回宏 ——
+`0x04 0x16 0x01 0x64` = `4 RK_PB6 RK_FUNC_1 &pcfg_pull_none`（gpio4 pin0x16=B6，func 1，cfg 0x64）。
+**先算清再写，不要凭印象填。**
+
+### 这份新固件的 02_network 不含 h29k
+
+`H29K-NEW-UI-20251029` 是通用镜像，`02_network` 只定义了
+h28k / h66k / h68k / h69k / ht2，**没有 h29k 分支**。
+⇒ 网口映射沿用本方案既有定义：**LAN `eth1` / WAN `eth0`**
+（`aliases ethernet0 = &gmac1` → 板载 RGMII 是 eth0）。
+
+### 归档
+
+厂商原始 dtb 已存入仓库 `vendor-h29k-v5-1.49.dtb`（40194 B），
+作为 1.49 寸参数的溯源依据。
+
+### 验证
+
+6 个变体 DTS 语法全部 PASS；对照组（lede 原版）PASS。

@@ -115,7 +115,12 @@ hinlink,opc-h28k|\
 		;;
 
 hinlink,opc-h29k|\
-	hinlink,opc-h29k-battery)
+	hinlink,h29k-v1.3|\
+	hinlink,h29k-v1.3-114|\
+	hinlink,h29k-v5|\
+	hinlink,h29k-v5-114|\
+	hinlink,h29k-v5-1.49|\
+	hinlink,h29k-v5-28)
 		ucidef_set_led_default "work" "WORK" "green:work" "1"
 		;;
 

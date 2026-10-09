@@ -7,9 +7,10 @@
 #include "rk3528.dtsi"
 
 / {
-	model = "HINLINK H29K (h29k-v13)";
-	// 屏幕: 1.9"  170x320
-	compatible = "hinlink,h29k-v13", "rockchip,rk3528";
+	model = "HINLINK H29K v1.3 (1.14 inch)";
+	// 屏幕: 1.14" 135x240 rot270
+	// 屏幕: 1.14" 135x240
+	compatible = "hinlink,h29k-v1.3-114", "rockchip,rk3528";
 
 	aliases {
 		mmc0 = &sdhci;
@@ -456,9 +457,9 @@
 
         spi-max-frequency = <6000000>;  
 
-		width = <170>;  
-		height = <320>; 
-
+		width = <135>; 
+		height = <240>;  
+		
 		buswidth = <8>;  
 		rotate = <270>;  
 		
