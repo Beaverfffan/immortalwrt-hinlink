@@ -109,10 +109,13 @@ hinlink,opc-h28k|\
 	hinlink,h28k|\
 	hlink,h28k|\
 	linkstar,h28k)
-		# H28K：**单网口** —— 只有板载 RGMII(gmac1)
-		# 厂商 QWRT-R24.07.07(h28x) dtb 三重实证：无 pci10ec 节点、
-		# pcie 下无网卡子节点、aliases 只有 ethernet0。⇒ 不会有 eth1。
-		ucidef_set_interfaces_lan_wan 'eth0'
+		# H28K：**双网口**
+		#   eth0 = 板载 RTL8211F RGMII 千兆（gmac1）
+		#   eth1 = PCIe RTL8111H 千兆（PCI 枚举产生，非 DT 节点）
+		# 依据：HinLink 官网「网口1 RTL8211F RGMII 千兆 / 网口2 RTL8111H PCIe 千兆」
+		# ⚠️ PCIe 侧网卡不写 pcie-eth 子节点，靠内核 pcie 驱动枚举自动发现，
+		#    所以厂商 dtb 全树没有 pci10ec 节点 —— 那不代表板上没网卡。
+		ucidef_set_interfaces_lan_wan 'eth0' 'eth1'
 		;;
 
 

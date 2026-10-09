@@ -201,13 +201,14 @@ define Device/hinlink_h28k_rk3528
   DEVICE_ALT0_MODEL := H28K
   DEVICE_DTS := rk3528-hinlink-h28k
   UBOOT_DEVICE_NAME := hinlink-h28k-rk3528
-  # ★ H28K 是**单网口**（厂商 QWRT-R24.07.07 h28x dtb 实证：全树无 pci10ec
-  #   节点、pcie 下无网卡子节点、aliases 只有 ethernet0）。
-  #   PCIe 控制器保留 status="okay" 供 M.2 扩展位用，但本机不挂网卡。
+  # ★ H28K 是**双网口**：
+  #     网口1 RTL8211F RGMII 千兆（板载，gmac1）
+  #     网口2 RTL8111H  PCIe 千兆（PCI 枚举产生）
+  #   依据 HinLink 官网产品页。PCIe 侧网卡不写 pcie-eth 子节点，
+  #   靠内核 pcie 驱动枚举自动发现 —— 这也是 kmod-r8169 必须带的原因。
   # ★ H28K **无板载 WiFi**：厂商 dtb 里 /mmc@ffbf0000 带 `no-sdio`，
   #   明确禁用 SDIO（RK3528 的 WiFi 走 sdio0），故不带任何无线驱动。
-  # ★ 唯一的网口是板载 RGMII(MAC)，不需要 r8169/8125 驱动；
-  #   仍保留 kmod-r8169 是为了将来插 M.2 扩展网卡时能直接识别。
+  # ★ 存储：板载 8G eMMC + TF 卡槽（厂商 dtb：mmc1=eMMC / mmc0=TF卡）
   DEVICE_PACKAGES += kmod-r8169
 endef
 TARGET_DEVICES += hinlink_h28k_rk3528

@@ -43,16 +43,15 @@ EXPECT = {
     'rk3568-hinlink-h69k-3eth':   3,  # 屏蔽 gmac1 -> 1xGMAC + 2xRTL8125
     'rk3568-hinlink-h69k-mini':   4,  # = H68K max，2xGMAC + 2xRTL8125
     # ---- RK3528 ----
-    # ★ H28K：厂商 QWRT-R24.07.07 (h28x) dtb 实证是**单网口** ——
-    #   全树无 pci10ec 节点、pcie 下无网卡子节点、aliases 只有 ethernet0。
-    #   上一轮曾按上游 unifreq 的 rk3528-hlink-h28k.dts 补 pcie-eth 判成双口，
-    #   厂商 dtb 证明那是错的。
-    'rk3528-hinlink-h28k':        1,
-    # H29K 全系与 HT2 也是**单网口**：DTS 只声明 gmac1，无 PCIe 网卡节点。
-    # 厂商 DTS 与上游 unifreq rk3528-hlink-h29k.dts 均为 aliases 只含
-    # ethernet0 = &gmac1，两侧一致。
-    # ★ vendor-h28x.dtb 里的 HT2（compatible = "hinlink,ht2"）同样只有
-    #   一个 gmac，与本仓库一致。
+    # H28K 是**双网口**：eth0 = 板载 RTL8211F RGMII(gmac1)，
+    # eth1 = PCIe RTL8111H（PCI 枚举产生，DT 里不写 pcie-eth）。
+    # 依据 HinLink 官网产品页「网口2 RTL8111H PCIe 千兆」。
+    'rk3528-hinlink-h28k':        2,
+    # H29K 全系与 HT2 是**单网口**：只有板载 RGMII(gmac1)。
+    # 厂商 h28x 固件里的 ht2 dtb（compatible = "hinlink,ht2"）同样只有
+    # 一个 gmac，与本仓库一致。
+    # ⚠️ 这两款 DTS 里**没有 &pcie 节点**，所以统计时 pcie 不计入，
+    #    校验器天然算出 1 口 —— 不需要 EXCLUDE。
     'rk3528-hinlink-h29k-v1.3-1.14': 1,
     'rk3528-hinlink-h29k-v5-1.14':   1,
     'rk3528-hinlink-h29k-v5-1.49':   1,
@@ -123,7 +122,7 @@ def dts_ports(dts, dtsi, soc='rk3568', exclude=()):
     return n
 
 
-# 按机型剔除的控制器（基线 dtsi 使能了，但本机型上不是**板载**网口）
+# 按机型剔除的控制器（该控制器在本机型上确实不是板载网口）
 EXCLUDE = {
     # H89K：pcie3x4 在 dtsi 里是 WiFi/SSD 位，H89K 的两路 2.5G 走
     # pcie2x1l1 / pcie2x1l2。不剔除会被算成 4 口。
@@ -136,11 +135,14 @@ EXCLUDE = {
     # 另外 gmac1 在 rk3588.dtsi 里默认 okay，但 H88K 只有 gmac0 板载 RGMII，
     # 不剔除会被算成 4 口。板载 = gmac0 + pcie2x1l1 + pcie2x1l2 = 3 口。
     'rk3588-hinlink-h88k-v3': ('pcie3x4', 'gmac1'),
-    # H28K：PCIe 控制器 status="okay"（厂商原值，供 M.2 扩展位用），
-    # 但厂商 dtb 里它下面**没有任何网卡子节点** ⇒ 不能计入网口数。
-    # 这就是「控制器 okay ≠ 有网卡」的典型例子。
-    'rk3528-hinlink-h28k': ('pcie',),
 }
+# ⚠️ 不要再往 EXCLUDE 里加「PCIe 控制器没挂网卡节点」这种判断 ——
+#   **DT 里没有网卡节点，不代表板上没有网卡。**
+#   标准 PCI 设备（RTL8111H / RTL8125 等）靠内核 pcie 驱动枚举自动发现，
+#   厂商 dtb 与上游 DTS 都不会写 pcie-eth。
+#   H28K 就是活例子：官网写明有 PCIe 千兆口，厂商 dtb 全树无 pci10ec，
+#   但 &pcie 是 okay + combphy 作 PCIe PHY ⇒ 网卡必然枚举出来。
+#   所以口数只看「该机型有没有使能对应的 PCIe 控制器」。
 
 
 def parse_net(path):
