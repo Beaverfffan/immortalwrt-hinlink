@@ -473,6 +473,20 @@
 		
 		buswidth = <8>;  
 		rotate = <270>;  
+
+
+		/*
+		 * 显示偏移（配合 patches/9999-fbtft-read-display-offset-from-dt.patch）
+		 * ST7789V 135x240 面板在 rotate 后显存窗口需平移才能对上可见区。
+		 * 数值来自原厂 1.14" 偏移 patch：
+		 *   rotate 90/270  ->  x += 40, y += 52
+		 *   rotate 0/180   ->  x += 52, y += 40
+		 * 上游 unifreq PR#19 给 H89K 标的 x-offset=40 / y-offset=52 与此吻合。
+		 */
+		x-offset = <40>;
+		y-offset = <52>;
+		x-offset-0 = <52>;
+		y-offset-0 = <40>;
 		
 		
 		debug = <0>;  

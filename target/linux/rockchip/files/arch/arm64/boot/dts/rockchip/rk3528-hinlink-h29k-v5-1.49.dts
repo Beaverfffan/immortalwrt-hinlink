@@ -471,49 +471,43 @@
 	pinctrl-0 = <&spi1_custom_pins>; // 分配SPI引脚和CS引脚
 	status = "okay";  // 激活SPI4控制器
 
-	st7789v_panel: panel@0 {  // 定义LCD面板的子节点
-		compatible = "sitronix,gc9307";   // 1.49 寸触屏版用 GC9307（旧版为 ST7789V）
-		reg = <0>;  // SPI设备地址，通常为0
-		power-supply = <&vcc_3v3_lcd>;  // LCD面板的电源输入，连接到3V电源
+	st7789v_panel: panel@0 {
+		/*
+		 * 1.49 寸电容触屏版 —— 屏参数全部取自厂商 dtb
+		 * （vendor-h29k-v5-1.49.dtb，/spi@ff9d0000/panel@0）：
+		 *   compatible = sitronix,gc9307   ← 与其他 H29K 的 st7789v 不同
+		 *   width  = 172、height = 320、rotate = 270、buswidth = 8
+		 *
+		 * 原文件里这几项混在三段注释（"1.9 微雪" / "1.9 new" /
+		 * "1.9 new 线序不对版本"）之间，启用的那一份看不出是哪段，
+		 * 容易误改。此处整理为「厂商原值」一段。
+		 *
+		 * ⚠️ 偏移量：厂商 dtb 与原厂 patch 都**没有**给1.49 寸的偏移值
+		 *   （原厂只给了 1.9" 与 1.14" 两份）。若实机显示位置不对，
+		 *   在这里加 x-offset / y-offset 即可（见
+		 *   patches/9999-fbtft-read-display-offset-from-dt.patch）。
+		 */
+		compatible = "sitronix,gc9307";
+		reg = <0>;
+		power-supply = <&vcc_3v3_lcd>;
 
-		pinctrl-names = "default";  // 定义管脚控制组名称为"default"
-		pinctrl-0 = <&lcd_dc_pin>;  // 分配数据/命令选择引脚
-		dc-gpios = <&gpio1 RK_PB4 GPIO_ACTIVE_HIGH>; // DC 引脚
-		// 1.49 寸触屏版改用 PWM 调光（256 级），非 GPIO 恒亮
+		pinctrl-names = "default";
+		pinctrl-0 = <&lcd_dc_pin>;
+		dc-gpios = <&gpio1 RK_PB4 GPIO_ACTIVE_HIGH>;
+
+		/* 1.49 寸触屏版改用 PWM 调光（256 级），非 GPIO 恒亮 */
 		backlight = <&backlight>;
-		// fps = <20>;  // 刷新率，未启用
 
-		
-		/* 1.9 微雪 */
-        //spi-max-frequency = <10000000>;  // 10Mhz
-		//width = <172>;  // 显示屏宽度
-		//height = <320>;  // 显示屏高度
-		//buswidth = <8>;  // 设置显示屏的总线宽度为8位
-		//rotate = <270>;
-
-
-		/* 1.9 new */
-      	spi-max-frequency = <6000000>;  // 10Mhz
-		width = <172>;  // 显示屏宽度
-		height = <320>;  // 显示屏高度
-		buswidth = <8>;  // 设置显示屏的总线宽度为8位
+		spi-max-frequency = <6000000>;
+		width = <172>;
+		height = <320>;
+		buswidth = <8>;
 		rotate = <270>;
-		spi-cpol;  // SPI时钟极性
-		spi-cpha;  // SPI时钟相位
-
-		/* 1.9 new 线序不对版本 */
-      	//spi-max-frequency = <600000>;  // 10Mhz
-		//width = <172>;  // 显示屏宽度
-		//height = <320>;  // 显示屏高度
-		//buswidth = <8>;  // 设置显示屏的总线宽度为8位
-		//rotate = <270>;
-		//spi-cpol;  // SPI时钟极性
-		//spi-cpha;  // SPI时钟相位
-
+		spi-cpol;
+		spi-cpha;
 
 		/* debug: 0-7 */
-		debug = <0>;  // 调试级别设置，0表示关闭调试
-
+		debug = <0>;
 	};
 };
 

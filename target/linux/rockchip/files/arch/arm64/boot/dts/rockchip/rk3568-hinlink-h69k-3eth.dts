@@ -158,6 +158,25 @@
 };
 
 &{/} {
+	/*
+	 * 5G 模组供电 —— GPIO0_C0，低有效，3.3V
+	 * 取自 iStoreOS rk3568-opc-h69k.dts（与厂商固件一致）。
+	 *
+	 * ★ startup-delay-us = 2 秒：5G 模组上电后需要时间稳定，
+	 *   过早发 AT 命令会失败。这个延时不能随意调小。
+	 *
+	 * ⚠️ 不要在本文件另加 rfkill-gpio 指向 GPIO0_C0：
+	 *   上游 unifreq 的 rk3568-hlink-h69k.dts 确实有
+	 *     rfkill_switchs { modem { reset-gpios = <&gpio0 RK_PC0 ...>; }; }
+	 *   但那个引脚与本regulator 的 gpio 是**同一个** ——
+	 *   两者都是「模组上电/复位」信号，同时配会互相打架
+	 *   （regulator 会周期性拉高，rfkill 又想控制它）。
+	 *
+	 *   本仓库只用 regulator 方式（开机上电、常亮），不做软关机。
+	 *   若需要 rfkill 软关机，必须先确认硬件上这脚到底接的是
+	 *   「模组 PWRKEY」还是「模组电源开关」—— 两者语义完全不同。
+	 *   详见 docs/HARDWARE.md §四。
+	 */
 	modem_enable: modem-enable {
 		compatible = "regulator-fixed";
 		enable-active-high;

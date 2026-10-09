@@ -4,11 +4,12 @@ HinLink（芯联）全系列路由器在 immortalwrt 上的设备树与板级配
 **按硬件变体一机一档，不做运行时自适应探测** —— 每个 `compatible` 对应一份独立
 DTS，`02_network` 里 `ethN` 映射写死。
 
-- **18 个机型** · 19 份 DTS · 7 份 dtsi · 4 份内核 patch · 6 个工具脚本 · 3 份厂商 dtb
+- **18 个机型** · 19 份 DTS · 7 份 dtsi · 2 份内核 patch · 6 个工具脚本 · 3 份厂商 dtb
 - 覆盖 RK3568（H66K / H68K / H69K）、RK3528（H28K / H29K / HT2）、RK3588（H88K / **H89K**）
 
 > 本仓库是**支线仓库**，只提供补丁文件，不含完整 OpenWrt 源码。
 > 应用方式见 [`docs/APPLY.md`](docs/APPLY.md)。
+> **特殊硬件（屏 / 风扇 / WiFi / 5G 模组 IO）逐项清单见 [`docs/HARDWARE.md`](docs/HARDWARE.md)**。
 
 ---
 
@@ -393,7 +394,9 @@ phy-mode = "rgmii-id"，snps,reset-delays-us = <0 20000 100000>
 | 供电轨 | 含 `vcc5v0_usb` / `vcc_3v3_s3` / `vcc_1v8_s3` | 已移除 |
 | 背光 pinctrl | `pull_up` | `pull_none` |
 
-> ⚠️ v5 的电池电压读取**依赖 `9527-rockchip-rk3528-iio-add-adc.patch`**，没有它读不出数据。
+> ✅ v5 的电池电压读取**不需要 patch** —— Linux 6.18 上游已原生支持
+> `rockchip,rk3528-saradc`（含4 通道 IIO），内核 `rk3528.dtsi` 里也已声明该
+> compatible。本仓库早期的 `9527-...-iio-add-adc.patch` 已删除。
 
 ### 4.7 H89K：厂商 dtb + 上游 PR 双重实证
 
@@ -505,8 +508,9 @@ target/linux/rockchip/
 │
 └── image/armv8.mk.hinlink                    设备定义片段（追加到 armv8.mk）
 
-patches/                                      4 份内核 patch（H29K 必需）
+patches/                                      2 份内核 patch（已验证干净应用）
 docs/APPLY.md                                 应用步骤（方案 A / B）
+docs/HARDWARE.md                             ★ 特殊硬件清单（屏/风扇/WiFi/5G 模组 IO）
 tools/                                        生成器 + 校验器 + DTB 解析器
 ```
 
@@ -530,11 +534,31 @@ H88K 依赖 `rk3588-hinlink.dtsi`（immortalwrt 6.18 内核中没有），它又
 
 ## 六、内核 patch
 
+只有 **2 份** patch，都已验证 `patch -p1` 可干净应用到 Linux 6.18（无 fuzz、无 offset）。
+
 | patch | 用途 | 必需性 |
 |---|---|---|
-| `9527-rockchip-rk3528-iio-add-adc.patch` | 给 `rockchip_saradc.c` 加 `rockchip,rk3528-saradc` 驱动 + 4 通道 IIO 芯片 | **H29K v5 必需**（电池电压） |
-| `9528-linux-delfbcon-cursor.patch` | `fb_flashcursor()` / `fbcon_cursor()` 开头 `return`，禁 framebuffer 硬件光标 | 建议 |
-| `9999-fbtft-...-h29k-1.14.patch` | 1.14 寸屏显示偏移补偿（H29K + H89K 都用它） | H29K 1.14" / H89K 必需 |
+| `9999-fbtft-read-display-offset-from-dt.patch` | fbtft 从 DT 读显示偏移（`x-offset` / `y-offset` / `x-offset-0` / `y-offset-0`），替代按机型硬编码的 switch | H29K 1.14" / H89K 必需 |
+| `9528-linux-delfbcon-cursor.patch` | `fb_flashcursor()` / `fbcon_cursor()` 开头 `return`，禁framebuffer 硬件光标 | 建议（SPI 小屏上硬件光标会错位） |
+
+**已删除的 patch**：
+
+| ~~patch~~ | 原因 |
+|---|---|
+| ~~`9527-rockchip-rk3528-iio-add-adc.patch`~~ | **6.18 上游已原生支持** `rockchip,rk3528-saradc`（`rockchip_saradc.c` 里已有 `rockchip_rk3528_saradc_data` + of_match_table 条目，内核 `rk3528.dtsi` 里也已声明该compatible）。只需 `kmod-iio-adc-rk3528` 让用户态能读。 |
+| ~~`9999-fbtft-...-h29k-1.14.patch`~~ | 被 `9999-fbtft-read-display-offset-from-dt.patch` 取代 —— 偏移量改为从 DT 读，同一份内核可同时支持 H29K（rotate 270）与 H89K（rotate 90），而硬编码 switch 无法区分。 |
+| ~~`9999-fbtft-...-h29k-1.9.patch`~~ | 1.9 寸变体已随机型精简移除。 |
+
+验证方法：
+
+```sh
+cd <kernel>
+patch -p1 --dry-run < <仓库>/patches/9999-fbtft-read-display-offset-from-dt.patch
+```
+
+> ⚠️ `9528` 需注意：6.18 里 `fbcon_cursor()` 的第二个参数已从 `int mode`
+> 改成 `bool enable`。旧版 patch 的上下文过时会导致 **fuzz 2** 应用，
+> 本仓库的版本已按 6.18 实际原型重写。
 
 ---
 

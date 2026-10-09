@@ -10,7 +10,9 @@
  *
  * ★ v5 相对 v1.3 的功能增减：有电池电压 ADC(saradc ch1)、有红外接收、
  *   有 uart2（5G 串口）；模组不再独立控制供电。
- *   电池电压读取依赖 patches/9527-rockchip-rk3528-iio-add-adc.patch。
+ *   电池电压读取**不需要 patch** —— Linux 6.18 上游已原生支持
+ *   rockchip,rk3528-saradc（4 通道 IIO），内核 rk3528.dtsi 里也已声明该
+ *compatible。本仓库早期的 9527-...-iio-add-adc.patch 已删除。
  *
  * ★ 屏幕尺寸只保留 1.14" 与 1.49" 两种；厂商的 1.9" / 2.8" 变体已移除。
  */
@@ -484,6 +486,20 @@
 		// fps = <20>;  // 刷新率，未启用
 		buswidth = <8>;  // 设置显示屏的总线宽度为8位
 		rotate = <90>;  // 显示旋转90度
+
+
+		/*
+		 * 显示偏移（配合 patches/9999-fbtft-read-display-offset-from-dt.patch）
+		 * ST7789V 135x240 面板在 rotate 后显存窗口需平移才能对上可见区。
+		 * 数值来自原厂 1.14" 偏移 patch：
+		 *   rotate 90/270  ->  x += 40, y += 52
+		 *   rotate 0/180   ->  x += 52, y += 40
+		 * 上游 unifreq PR#19 给 H89K 标的 x-offset=40 / y-offset=52 与此吻合。
+		 */
+		x-offset = <40>;
+		y-offset = <52>;
+		x-offset-0 = <52>;
+		y-offset-0 = <40>;
 		
 		
 		/* debug: 0-7 */

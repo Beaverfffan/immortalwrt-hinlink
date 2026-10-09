@@ -234,6 +234,10 @@ TARGET_DEVICES += hinlink_h28k_rk3528
 #   h29k-v5-1.49  hinlink,h29k-v5-149  172x320 rot270  GC9307 + AXS5106 + pwm3 背光
 
 # --- v1.3 目标 ---
+# 硬件要点：WiFi AIC8800(sdio0) / 屏 ST7789V 135x240 rot270 / GPIO 恒亮背光
+#   ★ 5G 模组 power-gpios = GPIO4_B5（单路，与 v5/H89K 不同）
+#   ★ 无电池电压 ADC、无红外接收、无 uart2
+#   屏偏移由 patches/9999-fbtft-read-display-offset-from-dt.patch 从 DT 读
 
 define Device/hinlink_h29k-v1.3-1.14_rk3528
   $(Device/rk3528)
@@ -246,6 +250,12 @@ endef
 TARGET_DEVICES += hinlink_h29k-v1.3-1.14_rk3528
 
 # --- v5 目标 ---
+# 硬件要点：WiFi AIC8800(sdio0) / 屏 ST7789V 135x240 rot90 / GPIO 恒亮背光
+#   ★ 有电池电压 ADC(saradc ch1) —— 6.18 上游已原生支持 rk3528-saradc，
+#     只需 kmod-iio-adc-rk3528 让用户态能读，不需要任何 patch
+#   ★ 有红外接收(gpio4_PC6)、有 uart2(5G 串口)
+#   ★ 5G 模组不独立控制供电（与 v1.3 的 GPIO4_B5 不同）
+#   屏偏移由 patches/9999-fbtft-read-display-offset-from-dt.patch 从 DT 读
 
 define Device/hinlink_h29k-v5-1.14_rk3528
   $(Device/rk3528)
@@ -259,6 +269,10 @@ endef
 TARGET_DEVICES += hinlink_h29k-v5-1.14_rk3528
 
 # 1.49 寸电容触屏版：GC9307 屏 + AXS5106 触控 + PWM 背光
+# ★ 全系唯一支持**亮度调节**的机型（pwm-backlight 256 级，pwm3/GPIO4_B6）
+# ★ 触控：chipone,axs5106 @I2C1(0x63)，irq=GPIO4_B2、reset=GPIO4_B3
+# ⚠️ 172x320 的显示偏移原厂未提供；实测若画面偏移，在 DTS 的 panel 节点
+#    加 x-offset / y-offset（配合 9999-...-from-dt.patch）
 define Device/hinlink_h29k-v5-1.49_rk3528
   $(Device/rk3528)
   DEVICE_VENDOR := HINLINK
@@ -271,6 +285,7 @@ define Device/hinlink_h29k-v5-1.49_rk3528
 endef
 TARGET_DEVICES += hinlink_h29k-v5-1.49_rk3528
 
+# HT2：单网口，WiFi AIC8800，★ SDIO 最高速率 SDR50（H29K 是 SDR104）
 define Device/hinlink_opc-ht2_rk3528
   $(Device/rk3528)
   DEVICE_VENDOR := HINLINK
@@ -297,8 +312,12 @@ TARGET_DEVICES += hinlink_opc-ht2_rk3528
 # ★ 不含板载 WiFi（用 M.2）
 #   5G 模组：4G/5G 供电 GPIO4_A3 + 复位 GPIO4_C6
 #   屏：ST7789V 135x240 rot90 @SPI4 m2（厂商 dtb + 上游 unifreq PR#19 双重实证）
-#     —— kmod-fb-tft-st7789v 提供驱动，显示偏移靠 patches/ 下 1.14 寸那份
-#        （同为 135x240，rot90 偏移量 xs+=40 ys+=52 与上游 PR 标注一致）
+#     —— kmod-fb-tft-st7789v 提供驱动；
+#     显示偏移由 patches/9999-fbtft-read-display-offset-from-dt.patch
+#     从 DT 读取（本 DTS 的 panel 节点已写 x-offset=40 / y-offset=52，
+#     值为 H29K 1.14" 同尺寸面板的偏移量，属推断，需实机确认）。
+#   5G 模组：双路 IO —— 供电 GPIO4_A3(5V) + 复位 GPIO4_C6(3.3V)
+#     ⚠️ 与 H29K 的模组 IO 完全不同，详见 docs/HARDWARE.md §四
 
 define Device/hinlink_opc-h89k_rk3588
   $(Device/rk3588)
@@ -329,6 +348,12 @@ define Device/hinlink_h88k_v3
   $(Device/hinlink_h88k_v2)
   DEVICE_MODEL := OPC-H88K V3
   DEVICE_DTS := rk3588-hinlink-h88k-v3
-  DEVICE_PACKAGES += kmod-fb-tft-st7789v
+  # ★ 屏走 **spidev + 用户态**（沿用 iStoreOS 的做法）：
+  #   DTS 里只有 spidev@0，没有 width/height/rotate 等 fbtft 屏参数，
+  #   所以装 fbtft 驱动也没用 —— 屏参数与画面要靠用户态工具加载。
+  #   若想改成 fbtft 方案，需在本 DTS 的 spidev@0 旁补 panel 节点
+  #   （sitronix,st7789v + 135x240 + rotate + x/y-offset），
+  #   并改用 kmod-fb-tft-st7789v。
+  DEVICE_PACKAGES += kmod-spi-spidev
 endef
 TARGET_DEVICES += hinlink_h88k_v3

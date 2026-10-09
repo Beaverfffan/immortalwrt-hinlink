@@ -1,6 +1,23 @@
---- a/drivers/video/fbdev/core/fbcon.c	2025-02-02 01:37:57.000000000 +0800
-+++ b/drivers/video/fbdev/core/fbcon.c	2025-03-09 09:49:51.835578411 +0800
-@@ -347,6 +347,7 @@
+From: HinLink adaptation for immortalwrt
+Subject: [PATCH] fbcon: disable hardware text cursor
+
+HinLink 的 SPI 小屏（H29K / H89K）接 framebuffer 控制台时，硬件光标会在
+屏上留下一块闪烁的色块，且与 fbtft 刷新的画面错位，很难看。
+
+在 fb_flashcursor() 与 fbcon_cursor() 开头直接 return，软件光标（由 fbcon
+自己绘制）不受影响，只禁用硬件光标。
+
+注意 6.18 里 fbcon_cursor() 的第二个参数已从 `int mode` 改成 `bool enable`
+（内核签名调整），本patch 已按 6.18 的实际原型编写。
+
+已验证 patch -p1 可干净应用到 Linux 6.18 的 drivers/video/fbdev/core/fbcon.c，
+无 fuzz、无 offset。
+
+Signed-off-by: HinLink immortalwrt adaptation
+---
+--- a/drivers/video/fbdev/core/fbcon.c
++++ b/drivers/video/fbdev/core/fbcon.c
+@@ -371,6 +371,7 @@
  
  static void fb_flashcursor(struct work_struct *work)
  {
@@ -8,9 +25,9 @@
  	struct fbcon_ops *ops = container_of(work, struct fbcon_ops, cursor_work.work);
  	struct fb_info *info;
  	struct vc_data *vc = NULL;
-@@ -1305,6 +1306,7 @@
+@@ -1335,6 +1336,7 @@
  
- static void fbcon_cursor(struct vc_data *vc, int mode)
+ static void fbcon_cursor(struct vc_data *vc, bool enable)
  {
 +	return;
  	struct fb_info *info = fbcon_info_from_console(vc->vc_num);

@@ -97,7 +97,25 @@
 		regulator-max-microvolt = <3300000>;
 	};
 
-	/* ---- 4G / 5G 模组：H89K 的标志性特征 ---- */
+	/*
+	 * ---- 4G / 5G 模组：H89K 的标志性特征 ----
+	 *
+	 * ★★ 两路独立 IO，缺一不可（参数全部来自厂商 2025 固件 dtb）：
+	 *
+	 *   modem_power  GPIO4_A3  低有效  **5.0V**  ← 模组主供电开关
+	 *       └ vin-supply = vcc_5v0_sys
+	 *   modem_reset  GPIO4_C6  低有效  **3.3V**  ← 模组复位（ vin 取 3.3V 轨）
+	 *       └ vin-supply = vcc3v3_modem
+	 *
+	 *⚠️ 与 H29K 的模组 IO **完全相反**，别套用：
+	 *     H29K v1.3  模组 power-gpios = GPIO4_B5（一路，模组自己管供电）
+	 *     H29K v5    模组不独立控制供电
+	 *     H89K       供电(GPIO4_A3/5V) + 复位(GPIO4_C6/3.3V) 两路分开
+	 *   套错会导致**模组不上电**或**无法复位**。详见 docs/HARDWARE.md §四。
+	 *
+	 * ⚠️ 上游 unifreq PR#19 的 rk3588-hlink-h89k.dts 没有这两个节点
+	 *    （它整份 DTS 只加了屏和 PCIe 网卡）。本节点来自厂商 dtb 实证。
+	 */
 	modem_power: modem-power {
 		compatible = "regulator-fixed";
 		regulator-name = "modem_power";
@@ -293,6 +311,19 @@
 		pinctrl-names = "default";
 		pinctrl-0 = <&lcd_dc_pin>;
 		power-supply = <&vcc3v0_lcd>;
+
+		/*
+		 * 显示偏移（配合 patches/9999-fbtft-read-display-offset-from-dt.patch）
+		 * 数值与 H29K 1.14" 同为 135x240 面板，原厂 1.14" 偏移 patch 适用：
+		 *   rotate 90/270  ->  x += 40, y += 52
+		 *   rotate 0/180   ->  x += 52, y += 40
+		 * 与上游 unifreq PR#19 标注的 40 / 52 一致。
+		 * ⚠️ 厂商 dtb 里没有这两个属性，属推断值 —— 需实机确认画面是否完整。
+		 */
+		x-offset = <40>;
+		y-offset = <52>;
+		x-offset-0 = <52>;
+		y-offset-0 = <40>;
 	};
 };
 
