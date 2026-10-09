@@ -1,0 +1,18 @@
+--- a/drivers/video/fbdev/core/fbcon.c	2025-02-02 01:37:57.000000000 +0800
++++ b/drivers/video/fbdev/core/fbcon.c	2025-03-09 09:49:51.835578411 +0800
+@@ -347,6 +347,7 @@
+ 
+ static void fb_flashcursor(struct work_struct *work)
+ {
++	return;
+ 	struct fbcon_ops *ops = container_of(work, struct fbcon_ops, cursor_work.work);
+ 	struct fb_info *info;
+ 	struct vc_data *vc = NULL;
+@@ -1305,6 +1306,7 @@
+ 
+ static void fbcon_cursor(struct vc_data *vc, int mode)
+ {
++	return;
+ 	struct fb_info *info = fbcon_info_from_console(vc->vc_num);
+ 	struct fbcon_ops *ops = info->fbcon_par;
+  	int c = scr_readw((u16 *) vc->vc_pos);

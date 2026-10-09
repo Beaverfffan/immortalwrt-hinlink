@@ -1,0 +1,23 @@
+--- a/drivers/staging/fbtft/fbtft-core.c.orig	
++++ b/drivers/staging/fbtft/fbtft-core.c	
+@@ -202,6 +202,20 @@
+ static void fbtft_set_addr_win(struct fbtft_par *par, int xs, int ys, int xe,
+ 			       int ye)
+ {
++	switch(par->info->var.rotate)
++	{
++		case   0: xs+=52;xe+=52;ys+=40;ye+=40;
++				 break;
++		case  90: xs+=40;xe+=40;ys+=52;ye+=52;
++				 break;
++		case 180: xs+=52;xe+=52;ys+=40;ye+=40;
++				 break;
++		case 270: xs+=40;xe+=40;ys+=52;ye+=52;
++				 break;
++		default :
++				 break;
++	}
++
+ 	write_reg(par, MIPI_DCS_SET_COLUMN_ADDRESS,
+ 		  (xs >> 8) & 0xFF, xs & 0xFF, (xe >> 8) & 0xFF, xe & 0xFF);
+ 

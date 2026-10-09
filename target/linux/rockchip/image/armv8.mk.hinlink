@@ -186,24 +186,62 @@ define Device/hinlink_h28k_rk3528
 endef
 TARGET_DEVICES += hinlink_h28k_rk3528
 
-define Device/hinlink_opc-h29k_rk3528
+# H29K 共 5 个硬件变体：主板版本(v1.3 / v5) x 屏幕尺寸(1.9 / 1.14 / 2.8)
+# 全部来自厂商原始 DTS（hinlink/h29k-*），非臆造
+#
+#   变体 compatible      屏幕        电池电压检测  红外  4G/5G 模组 power-gpios
+#   v13        h29k-v13    1.9" 170x320否     否    有
+#   v13-114    h29k-v13-114 1.14" 135x240    否     否    有
+#   v5         h29k-v5     1.9" 170x320    saradc 通道1  有    无
+#   v5-114     h29k-v5-114 1.14" 135x240   saradc 通道1  有    无
+#   v5-28      h29k-v5-28  2.8" 240x320    saradc 通道1  有    无
+#
+# 屏幕差异需配套内核 patch（见 patches/）：
+#   9999-fbtft-adjust-display-offset-for-rotation-h29k-1.9.patch   偏移 +35
+#   9999-fbtft-adjust-display-offset-for-rotation-h29k-1.14.patch  偏移 +52/+40
+#   2.8 寸未提供 patch —— 厂商注释里标为 "2.8 屏幕 new"，可能沿用 1.9 偏移
+
+define Device/hinlink_h29k-v13_rk3528
   $(Device/rk3528)
   DEVICE_VENDOR := HINLINK
-  DEVICE_MODEL := OPC-H29K
-  DEVICE_DTS := rk3528-hinlink-h29k
-  UBOOT_DEVICE_NAME := hinlink-h29k-rk3528
+  DEVICE_MODEL := H29K v1.3 (1.9 inch)
+  DEVICE_DTS := rk3528-hinlink-h29k-v13
+  UBOOT_DEVICE_NAME := generic-rk3528
   DEVICE_PACKAGES := kmod-aic8800s kmod-fb-tft-st7789v kmod-r8169
 endef
-TARGET_DEVICES += hinlink_opc-h29k_rk3528
+TARGET_DEVICES += hinlink_h29k-v13_rk3528
 
-define Device/hinlink_opc-h29k-battery_rk3528
-  $(Device/hinlink_opc-h29k_rk3528)
-  DEVICE_MODEL += " (battery)"
-  DEVICE_DTS := rk3528-hinlink-h29k-battery
-  UBOOT_DEVICE_NAME := hinlink-h29k-battery-rk3528
-  DEVICE_PACKAGES += kmod-power-supply
+define Device/hinlink_h29k-v13-114_rk3528
+  $(Device/hinlink_h29k-v13_rk3528)
+  DEVICE_MODEL := H29K v1.3 (1.14 inch)
+  DEVICE_DTS := rk3528-hinlink-h29k-v13-114
 endef
-TARGET_DEVICES += hinlink_opc-h29k-battery_rk3528
+TARGET_DEVICES += hinlink_h29k-v13-114_rk3528
+
+define Device/hinlink_h29k-v5_rk3528
+  $(Device/rk3528)
+  DEVICE_VENDOR := HINLINK
+  DEVICE_MODEL := H29K v5 (1.9 inch)
+  DEVICE_DTS := rk3528-hinlink-h29k-v5
+  UBOOT_DEVICE_NAME := generic-rk3528
+  DEVICE_PACKAGES := kmod-aic8800s kmod-fb-tft-st7789v kmod-r8169 \
+                     kmod-iio-adc-rk3528 kmod-power-supply
+endef
+TARGET_DEVICES += hinlink_h29k-v5_rk3528
+
+define Device/hinlink_h29k-v5-114_rk3528
+  $(Device/hinlink_h29k-v5_rk3528)
+  DEVICE_MODEL := H29K v5 (1.14 inch)
+  DEVICE_DTS := rk3528-hinlink-h29k-v5-114
+endef
+TARGET_DEVICES += hinlink_h29k-v5-114_rk3528
+
+define Device/hinlink_h29k-v5-28_rk3528
+  $(Device/hinlink_h29k-v5_rk3528)
+  DEVICE_MODEL := H29K v5 (2.8 inch)
+  DEVICE_DTS := rk3528-hinlink-h29k-v5-28
+endef
+TARGET_DEVICES += hinlink_h29k-v5-28_rk3528
 
 define Device/hinlink_opc-ht2_rk3528
   $(Device/rk3528)

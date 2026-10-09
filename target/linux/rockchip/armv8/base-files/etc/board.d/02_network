@@ -107,7 +107,11 @@ hinlink,h66k|\
 hinlink,h28k|\
 linkstar,h28k|\
 hinlink,opc-h29k|\
-hinlink,opc-h29k-battery|\
+hinlink,h29k-v13|\
+hinlink,h29k-v13-114|\
+hinlink,h29k-v5|\
+hinlink,h29k-v5-114|\
+hinlink,h29k-v5-28|\
 hinlink,opc-ht2|\
 hinlink,h88k-v2|\
 hinlink,h88k-v3)
@@ -125,7 +129,11 @@ hinlink,opc-h28k|\
 		;;
 
 hinlink,opc-h29k|\
-	hinlink,opc-h29k-battery)
+	hinlink,h29k-v13|\
+	hinlink,h29k-v13-114|\
+	hinlink,h29k-v5|\
+	hinlink,h29k-v5-114|\
+	hinlink,h29k-v5-28)
 		# H29K：板载 RGMII 为 eth0，PCIe 为 eth1
 		ucidef_set_interfaces_lan_wan 'eth1' 'eth0'
 		;;

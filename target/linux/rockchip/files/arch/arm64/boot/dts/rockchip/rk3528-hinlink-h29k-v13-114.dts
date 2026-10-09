@@ -1,19 +1,4 @@
 // SPDX-License-Identifier: (GPL-2.0+ OR MIT)
-/*
- * HinLink OPC-H29K (battery) —— HinLink 适配 for immortalwrt
- *
- * 本文件基于 coolsnowwolf/lede 的 rk3528-opc-h29k.dts，
- * 仅追加头部说明与电池管理段（待实机确认），**未改动任何硬件配置**。
- *
- * 理由：lede 的 DTS 已在发布固件中验证过可编译，比手写可靠。
- *
- * 硬件要点（来自 lede 源码）：
- *   - 板载 RGMII 网口（gmac1），PCIe 口未在本 DTS 启用
- *   - 板载 SDIO WiFi：复位 GPIO1_A6低有效，host-wake GPIO1_A7
- *   - 4G/5G 双 LED（gpio4 PC0/ PC3）+ 绿色工作灯（gpio4 PB7）
- *   - rfkill 控制 4G/5G 模组（gpio1 PB0）
- *   - 含 SPI 屏接口（st7789v）
- */
 
 /dts-v1/;
 #include <dt-bindings/gpio/gpio.h>
@@ -22,16 +7,14 @@
 #include "rk3528.dtsi"
 
 / {
-	model = "HINLINK OPC-H29K Board";
-	compatible = "hinlink,opc-h29k", "rockchip,rk3528";
+	model = "HINLINK H29K (h29k-v13-114)";
+	// 屏幕: 1.14" 135x240
+	compatible = "hinlink,h29k-v13-114", "rockchip,rk3528";
 
 	aliases {
 		mmc0 = &sdhci;
 		mmc1 = &sdmmc;
 		mmc2 = &sdio0;
-		serial0 = &uart0;
-		serial1 = &uart1;
-		serial2 = &uart2;
 		ethernet0 = &gmac1;
 
 		led-boot = &led_work;
@@ -44,25 +27,18 @@
 		stdout-path = "serial0:1500000n8";
 	};
 
-	ir-receiver {
-		compatible = "gpio-ir-receiver";
-		gpios = <&gpio4 RK_PC6 GPIO_ACTIVE_LOW>;
-		pinctrl-names = "default";
-		pinctrl-0 = <&ir_int_pin>;
-	};
-
 	leds {
 		compatible = "gpio-leds";
 		pinctrl-names = "default";
-		pinctrl-0 = <&led_4g_en>, <&led_5g_en>, <&led_work_en>;
+		pinctrl-0 = <&modem_4g_led>,<&modem_5g_led>, <&work_led_en>;
 
-		4g {
-			label = "red:4g";
+		modem_4g: modem_4g {
+			label = "red:modem_4g";
 			gpios = <&gpio4 RK_PC0 GPIO_ACTIVE_LOW>;
 		};
 
-		5g {
-			label = "blue:5g";
+		modem_5g: modem_5g {
+			label = "blue:modem_5g";
 			gpios = <&gpio4 RK_PC3 GPIO_ACTIVE_LOW>;
 		};
 
@@ -72,21 +48,16 @@
 		};
 	};
 
+
+
 	rfkill-modem {
 		compatible = "rfkill-gpio";
-		label = "rfkill-modem";
-		radio-type = "wwan";
+		name = "rfkill-modem";
+		type = "wwan";
 		reset-gpios = <&gpio4 RK_PB4 GPIO_ACTIVE_LOW>;
+		power-gpios = <&gpio4 RK_PB5 GPIO_ACTIVE_LOW>; 
 	};
 
-	sdio_pwrseq: sdio-pwrseq {
-		compatible = "mmc-pwrseq-simple";
-		pinctrl-names = "default";
-		pinctrl-0 = <&wifi_reg_on>;
-		post-power-on-delay-ms = <100>;
-		power-off-delay-us = <5000000>;
-		reset-gpios = <&gpio1 RK_PA6 GPIO_ACTIVE_LOW>;
-	};
 
 	vcc5v0_sys: vcc5v0-sys {
 		compatible = "regulator-fixed";
@@ -95,6 +66,16 @@
 		regulator-boot-on;
 		regulator-min-microvolt = <5000000>;
 		regulator-max-microvolt = <5000000>;
+	};
+	
+	vcc5v0_usb: vcc5v0-usb {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc5v0_usb";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		vin-supply = <&vcc5v0_sys>;
 	};
 
 	vcc_3v3: vcc-3v3 {
@@ -117,43 +98,48 @@
 		vin-supply = <&vcc_3v3>;
 	};
 
-	vcc_3v3_lcd: vcc-3v3-lcd {
+	vcc3v3_sd: vcc3v3-sd {
 		compatible = "regulator-fixed";
-		enable-active-high;
-		gpio = <&gpio0 RK_PA0 GPIO_ACTIVE_HIGH>;
-		regulator-name = "vcc_3v3_lcd";
+		gpio = <&gpio4 RK_PA1 GPIO_ACTIVE_LOW>;
+		regulator-name = "vcc3v3_sd";
+		regulator-always-on;
+		regulator-boot-on;
 		regulator-min-microvolt = <3300000>;
 		regulator-max-microvolt = <3300000>;
+		vin-supply = <&vcc_3v3>;
+	};
+	
+	vcc_3v3_s3: vcc-3v3-s3 {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc_3v3_s3";
 		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
 		vin-supply = <&vcc5v0_sys>;
 	};
 
-	vcc3v3_sd: vcc3v3-sd {
+	vcc_1v8_s3: vcc-1v8-s3 {
 		compatible = "regulator-fixed";
-		gpios = <&gpio4 RK_PA1 GPIO_ACTIVE_LOW>;
-		pinctrl-names = "default";
-		pinctrl-0 = <&sdmmc_pwren_l>;
-		regulator-name = "vcc3v3_sd";
+		regulator-name = "vcc_1v8_s3";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+		vin-supply = <&vcc_3v3>;
+	};
+
+	vcc_3v3_lcd: vcc-3v3-lcd {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc_3v3_lcd";
 		regulator-min-microvolt = <3300000>;
 		regulator-max-microvolt = <3300000>;
 		vin-supply = <&vcc_3v3>;
 	};
 
-	vcc5v0_usb: vcc5v0-usb {
-		compatible = "regulator-fixed";
-		regulator-name = "vcc5v0_usb";
-		regulator-always-on;
-		regulator-boot-on;
-		regulator-min-microvolt = <5000000>;
-		regulator-max-microvolt = <5000000>;
-		vin-supply = <&vcc5v0_sys>;
-	};
-
 	vccio_sd: vccio-sd {
 		compatible = "regulator-gpio";
 		gpios = <&gpio4 RK_PB6 GPIO_ACTIVE_HIGH>;
-		pinctrl-names = "default";
-		pinctrl-0 = <&sdmmc_vol_ctrl_h>;
 		regulator-name = "vccio_sd";
 		regulator-min-microvolt = <1800000>;
 		regulator-max-microvolt = <3300000>;
@@ -166,8 +152,8 @@
 		regulator-name = "vcc_ddr";
 		regulator-always-on;
 		regulator-boot-on;
-		regulator-min-microvolt = <1100000>;
-		regulator-max-microvolt = <1100000>;
+		regulator-min-microvolt = <1200000>;
+		regulator-max-microvolt = <1200000>;
 		vin-supply = <&vcc5v0_sys>;
 	};
 
@@ -184,25 +170,32 @@
 	vdd_arm: vdd-arm {
 		compatible = "pwm-regulator";
 		pwms = <&pwm1 0 5000 1>;
-		pwm-supply = <&vcc5v0_sys>;
 		regulator-name = "vdd_arm";
-		regulator-always-on;
-		regulator-boot-on;
 		regulator-min-microvolt = <746000>;
 		regulator-max-microvolt = <1201000>;
+		regulator-always-on;
+		regulator-boot-on;
 		regulator-settling-time-up-us = <250>;
+		pwm-supply = <&vcc5v0_sys>;
 	};
 
 	vdd_logic: vdd-logic {
 		compatible = "pwm-regulator";
 		pwms = <&pwm2 0 5000 1>;
-		pwm-supply = <&vcc5v0_sys>;
 		regulator-name = "vdd_logic";
-		regulator-always-on;
-		regulator-boot-on;
 		regulator-min-microvolt = <705000>;
 		regulator-max-microvolt = <1006000>;
+		regulator-always-on;
+		regulator-boot-on;
 		regulator-settling-time-up-us = <250>;
+		pwm-supply = <&vcc5v0_sys>;
+	};
+
+	sdio_pwrseq: sdio-pwrseq {
+		compatible = "mmc-pwrseq-simple";
+		pinctrl-names = "default";
+		pinctrl-0 = <&wifi_enable_h>;
+		reset-gpios = <&gpio1 RK_PA6 GPIO_ACTIVE_LOW>;
 	};
 };
 
@@ -226,17 +219,21 @@
 	cpu-supply = <&vdd_arm>;
 };
 
+&sfc {
+	status = "okay";
+};
+
 &gmac1 {
 	clock_in_out = "output";
-	phy-handle = <&rgmii_phy>;
-	phy-mode = "rgmii-id";
-	phy-supply = <&vcc_3v3>;
 	pinctrl-names = "default";
 	pinctrl-0 = <&rgmii_miim
 		     &rgmii_tx_bus2
 		     &rgmii_rx_bus2
 		     &rgmii_rgmii_clk
 		     &rgmii_rgmii_bus>;
+	phy-handle = <&rgmii_phy>;
+	phy-mode = "rgmii-id";
+	phy-supply = <&vcc_3v3>;
 	snps,reset-active-low;
 	snps,reset-delays-us = <0 20000 100000>;
 	snps,reset-gpio = <&gpio4 RK_PC2 GPIO_ACTIVE_LOW>;
@@ -248,10 +245,6 @@
 	status = "okay";
 };
 
-&i2c1 {
-	status = "okay";
-};
-
 &mdio1 {
 	rgmii_phy: phy@1 {
 		compatible = "ethernet-phy-ieee802.3-c22";
@@ -260,74 +253,67 @@
 };
 
 &pinctrl {
-	ir {
-		ir_int_pin: ir-int-pin {
-			rockchip,pins = <4 RK_PC6 RK_FUNC_GPIO &pcfg_pull_up>;
-		};
-	};
-
 	leds {
-		led_4g_en: led-4g-en {
+
+		work_led_en: led-work-en {
+			rockchip,pins = <4 RK_PB7 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+
+		modem_4g_led: modem_4g_led{
 			rockchip,pins = <4 RK_PC0 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 
-		led_5g_en: led-5g-en {
+		modem_5g_led: modem_5g_led{
 			rockchip,pins = <4 RK_PC3 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
-
-		led_work_en: led-work-en {
-			rockchip,pins = <4 RK_PB7 RK_FUNC_GPIO &pcfg_pull_none>;
-		};
 	};
-
-	mmc {
-		sdmmc_pwren_l: sdmmc-pwren-l {
-			rockchip,pins = <4 RK_PA1 RK_FUNC_GPIO &pcfg_pull_none>;
-		};
-
-		sdmmc_vol_ctrl_h: sdmmc-vol-ctrl-h {
-			rockchip,pins = <4 RK_PB6 RK_FUNC_GPIO &pcfg_pull_none>;
-		};
-	};
-
-	spi1 {
-		spi1_pins: spi1-pins {
-			rockchip,pins =
-				<1 RK_PB6 2 &pcfg_pull_none_drv_level_2>,
-				<1 RK_PB7 2 &pcfg_pull_none_drv_level_2>;
-		};
-
-		lcd_rs_pin: lcd-rs-pin {
-			rockchip,pins = <1 RK_PB4 RK_FUNC_GPIO &pcfg_pull_up>;
-		};
-	};
-
+	
 	wifi {
-		wifi_reg_on: wifi-reg-on {
+		wifi_enable_h: wifi-enable-h {
 			rockchip,pins = <1 RK_PA6 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 
-		wl_wake_host: wl-wake-host {
+		wifi_host_wake: wifi-host-wake {
 			rockchip,pins = <1 RK_PA7 RK_FUNC_GPIO &pcfg_pull_down>;
 		};
 	};
+
+	bluetooth {
+		bt_enable_h: bt-enable-h {
+			rockchip,pins = <1 RK_PC1 RK_FUNC_GPIO &pcfg_pull_down>;
+		};
+
+		uart2m1_gpios: uart2m1-gpios {
+			rockchip,pins = <1 RK_PB2 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
+	lcd {
+		lcd_dc_pin: lcd-dc-pin {
+			rockchip,pins = <1 RK_PB4 RK_FUNC_GPIO &pcfg_pull_up_drv_level_6>;
+		};
+		
+		spi1_custom_pins: spi4-custom-pins {
+			rockchip,pins =
+				/* spi1_clk_m2 */
+				<1 RK_PB6 2 &pcfg_pull_none_drv_level_2>,
+				/* spi1_mosi_m2 */
+				<1 RK_PB7 2 &pcfg_pull_none_drv_level_2>;
+		};
+
+		lcd_backlight_pin: lcd-backlight-pin {
+            rockchip,pins = <0 RK_PA0 RK_FUNC_GPIO &pcfg_pull_up>;  // 背光引脚
+        };
+	};
+    
 };
 
+
 &pwm1 {
-	pinctrl-names = "default";
-	pinctrl-0 = <&pwm1m0_pins>;
 	status = "okay";
 };
 
 &pwm2 {
-	pinctrl-names = "default";
-	pinctrl-0 = <&pwm2m0_pins>;
-	status = "okay";
-};
-
-&pwm5 {
-	pinctrl-names = "default";
-	pinctrl-0 = <&pwm5m1_pins>;
 	status = "okay";
 };
 
@@ -335,25 +321,30 @@
 	status = "okay";
 };
 
-&saradc {
-	vref-supply = <&vcc_1v8>;
-	status = "okay";
-};
-
 &sdhci {
 	bus-width = <8>;
-	cap-mmc-highspeed;
 	mmc-hs200-1_8v;
+	max-frequency = <200000000>;
 	non-removable;
+	pinctrl-names = "default";
+	pinctrl-0 = <&emmc_bus8 &emmc_clk &emmc_cmd &emmc_strb>;
 	vmmc-supply = <&vcc_3v3>;
 	vqmmc-supply = <&vcc_1v8>;
 	status = "okay";
 };
 
+
 &sdmmc {
 	bus-width = <4>;
 	cap-sd-highspeed;
 	disable-wp;
+	max-frequency = <150000000>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&sdmmc_bus4 &sdmmc_clk &sdmmc_cmd &sdmmc_det>;
+	rockchip,default-sample-phase = <90>;
+	sd-uhs-sdr12;
+	sd-uhs-sdr25;
+	sd-uhs-sdr50;
 	sd-uhs-sdr104;
 	vmmc-supply = <&vcc3v3_sd>;
 	vqmmc-supply = <&vccio_sd>;
@@ -367,36 +358,23 @@
 	cap-sd-highspeed;
 	cap-sdio-irq;
 	keep-power-in-suspend;
+	max-frequency = <200000000>;
 	mmc-pwrseq = <&sdio_pwrseq>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&sdio0_bus4 &sdio0_cmd &sdio0_clk>;
+	post-power-on-delay-ms = <50>;
 	non-removable;
 	sd-uhs-sdr104;
 	status = "okay";
 
-	wifi@1 {
+	sdio_wifi@1 {
+
 		reg = <1>;
 		interrupt-parent = <&gpio1>;
 		interrupts = <RK_PA7 IRQ_TYPE_LEVEL_HIGH>;
 		interrupt-names = "host-wake";
 		pinctrl-names = "default";
-		pinctrl-0 = <&wl_wake_host>;
-	};
-};
-
-&spi1 {
-	pinctrl-names = "default";
-	pinctrl-0 = <&spi1_pins>;
-	status = "okay";
-
-	panel@0 {
-		compatible = "sitronix,st7789v";
-		reg = <0>;
-		buswidth = <8>;
-		pinctrl-names = "default";
-		pinctrl-0 = <&lcd_rs_pin>;
-		dc-gpios = <&gpio1 RK_PB4 GPIO_ACTIVE_HIGH>;
-		led-gpios = <&gpio0 RK_PA1 GPIO_ACTIVE_HIGH>;
-		spi-max-frequency = <15000000>;
-		power-supply = <&vcc_3v3_lcd>;
+		pinctrl-0 = <&wifi_host_wake>;
 	};
 };
 
@@ -410,15 +388,14 @@
 	status = "okay";
 };
 
-&uart1 {
-	pinctrl-names = "default";
-	pinctrl-0 = <&uart1m0_xfer>;
+&usb2phy0_host {
+	phy-supply = <&vcc5v0_sys>;
 	status = "okay";
 };
 
-&uart2 {
-	pinctrl-names = "default";
-	pinctrl-0 = <&uart2m1_ctsn &uart2m1_xfer>;
+&usb2phy0_otg {
+	phy-supply = <&vcc5v0_sys>;
+	vbus-supply = <&vcc_3v3>;
 	status = "okay";
 };
 
@@ -426,15 +403,14 @@
 	status = "okay";
 };
 
-&usb2phy_host {
-	phy-supply = <&vcc5v0_usb>;
-	status = "okay";
-};
+// &usbdrd30 {
+//	status = "okay";
+// };
 
-&usb2phy_otg {
-	phy-supply = <&vcc5v0_usb>;
-	status = "okay";
-};
+// &usbdrd_dwc3 {
+// 	dr_mode = "host";
+// 	status = "okay";
+// };
 
 &usb_host0_ehci {
 	status = "okay";
@@ -449,23 +425,49 @@
 	status = "okay";
 };
 
-/*
- * ★ 电池版本：以下为占位，需实机补全 ★
- *
- * 未知项（必须实机确认，不能猜）：
- *   - 电量计芯片型号与 I2C 地址
- *   - 充电 IC 型号与使能/状态引脚
- *   - 是否真的有独立电池供电路径（还是仅靠 USB 5V 旁路充电）
- *
- * 取证方法（在刷了 H29K 的机器上执行）：
- *   ls /sys/bus/i2c/devices/
- *   dmesg | grep -iE "bq27|bq25|max17|chg|charg|battery"
- *   cat /sys/class/power_supply/*/uevent
- *   find /sys/bus/i2c/devices/ -name uevent -exec grep -l . {} \;
- *
- * 拿到数据后再补vcc_chg / gauge / battery 节点与对应 kmod。
- * 在此之前不要凭空填 GPIO —— 填错会导致充电异常甚至损坏电池。
- */
-&{/} {
-	/* placeholder-battery: 待实机确认后补全 */
+&saradc {
+    compatible = "rockchip,rk3528-saradc";
+	vref-supply = <&vcc_1v8>;
+	status = "okay";
 };
+
+
+
+&spi1 {  
+	#address-cells = <1>;  
+	#size-cells = <0>;  
+	assigned-clocks = <&cru CLK_SPI1>;  
+	assigned-clock-rates = <200000000>;  
+	num-cs = <1>; 
+	pinctrl-names = "default"; 
+	pinctrl-0 = <&spi1_custom_pins &lcd_backlight_pin>; 
+	status = "okay"; 
+
+	st7789v_panel: panel@0 {  
+		compatible = "sitronix,st7789v";  
+		reg = <0>;  
+		power-supply = <&vcc_3v3_lcd>;  
+
+		pinctrl-names = "default";  
+		pinctrl-0 = <&lcd_dc_pin>;  
+		dc-gpios = <&gpio1 RK_PB4 GPIO_ACTIVE_HIGH>; 
+		backlight-gpios = <&gpio0 RK_PA0 GPIO_ACTIVE_LOW>;  
+
+
+        spi-max-frequency = <6000000>;  
+
+		width = <135>; 
+		height = <240>;  
+		
+		buswidth = <8>;  
+		rotate = <270>;  
+		
+		
+		debug = <0>;  
+		spi-cpol;  
+		spi-cpha;  
+		
+	};
+};
+
+ 

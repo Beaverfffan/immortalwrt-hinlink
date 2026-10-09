@@ -266,7 +266,7 @@ make -j$(nproc)
 |---|---|---|---|---|---|---|
 | 8 | **H28K** | RK3528 | `rk3528-hinlink-h28k.dts` | `hinlink,h28k` | RGMII + PCIe RTL8111HS | 无（主线已支持） |
 | 9 | **H29K** | RK3528 | `rk3528-hinlink-h29k.dts` | `hinlink,opc-h29k` | RGMII | SDIO（SDR104） |
-| 10 | **H29K 电池版** | RK3528 | `rk3528-hinlink-h29k-battery.dts` | `hinlink,opc-h29k-battery` | 同上 | 同上 |
+| 10 | ~~**H29K 电池版**~~ **已删除** | — | — | — | — | 该划分模型有误，见第三批；真实变体是 v1.3/v5 × 屏尺寸 |
 | 11 | **HT2** | RK3528 | `rk3528-hinlink-ht2.dts` | `hinlink,opc-ht2` | RGMII | SDIO（SDR50） |
 | 12 | **H88K V2** | RK3588 | `rk3588-hinlink-h88k-v2.dts` | `hinlink,h88k-v2` | 1×RGMII + 2×PCIe | M.2 |
 | 13 | **H88K V3** | RK3588 | `rk3588-hinlink-h88k-v3.dts` | `hinlink,h88k-v3` | 1×RGMII + 2×PCIe | M.2 |
@@ -276,7 +276,7 @@ make -j$(nproc)
 | 机型 | LAN | WAN |
 |---|---|---|
 | H28K | eth0 | eth1 |
-| H29K / 电池版 | eth1 | eth0 |
+| H29K（全部 5 个变体） | eth1 | eth0 |
 | HT2 | eth0 | eth1 |
 | H88K V2/V3 | eth1 eth2 eth3 | eth0 |
 
@@ -293,7 +293,9 @@ make -j$(nproc)
 
 因此第二批的来源：
 - H28K → OpenWrt 主线 `rk3528-hinlink-h28k.dts` 原版
-- H29K / 电池版 / HT2 → coolsnowwolf/lede 的 `rk3528-opc-h29k.dts` / `rk3528-opc-ht2.dts`，**只改头部注释**
+- ~~H29K / 电池版 / HT2 → coolsnowwolf/lede的 DTS，只改头部注释~~ **已修正**
+  - **H29K**：改用厂商原始 5 份 DTS（`hinlink,h29k-*`），lede 那份是混合体且背光引脚有误，见第三批
+  - **HT2**：仍基于 coolsnowwolf/lede 的 `rk3528-opc-ht2.dts`，只改头部注释
 - H88K V2/V3 → istoreos 的 `rk3588-h88k-v2.dts` / `-v3.dts`，**只改头部注释**
 
 ### ★ H88K 必须连带移植 iStoreOS 私有 dtsi
@@ -337,18 +339,16 @@ host-wake = GPIO1_A7 高电平触发
 **板载 RGMII**（两机相同）：`phy-mode = "rgmii-id"`，PHY 复位 gpio4 PC2，
 `snps,reset-delays-us = <0 20000 100000>`。
 
-### H29K 电池版本：待实机确认
+### H29K：真实变体与待确认项（第三批修订）
 
-DTS 里只有占位段，**没有填任何 GPIO**。需要确认：
+原「电池版本」一节已删除 —— 该机型划分模型有误。真实变体见第三批章节。
 
-```sh
-ls /sys/bus/i2c/devices/
-dmesg | grep -iE "bq27|bq25|max17|chg|charg|battery"
-cat /sys/class/power_supply/*/uevent
-```
-
-拿到电量计芯片型号与 I2C 地址后再补节点。**在拿到数据前不猜GPIO —— 填错会导致
-充电异常甚至损坏电池。**
+仍需实机确认：
+1. **1.9 寸屏是「微雪原厂」还是「线序不对版本」** —— 两者 `spi-max-frequency`
+   差 16 倍（10MHz vs 600kHz），刷错屏会花屏
+2. **2.8 寸屏用哪份 fbtft 偏移 patch** —— 厂商只给了 1.9 与 1.14 两份
+3. **v5 的电池电压读取** —— 依赖 `9527-rockchip-rk3528-iio-add-adc.patch`，
+   无此 patch 时 `adc-battery@0` 读不出数据
 
 ### RK3588 硬件要点（H88K）
 
@@ -372,3 +372,104 @@ v3 的 `eth_order` 是作者为解决枚举顺序不稳定而显式加的，移�
 | dtc 完整编译 | ❌ 未验证（同第一批，环境问题） |
 | phandle 交叉引用 | ❌ 未验证 —— **这正是第一版手写时出问题的地方，建议在 buildroot 里 `make target/compile` 实测** |
 | 实机启动 | ❌ 未验证 |
+---
+
+## H29K 真实情况修订（第三批）
+
+用户提供厂商原始 DTS 共 5 份 + 4 份内核 patch。
+**此前「H29K 分电池版 / 非电池版」的假设被推翻。**
+
+### 撤回上一版的错误
+
+上一版我建了 `rk3528-hinlink-h29k-battery.dts`（占位段，一个 GPIO 都没填），
+并在 README 写「H29K 电池版 / 非电池版」。**这个划分模型是错的，已删除。**
+
+真实的两个维度是：**主板版本（v1.3 / v5）× 屏幕尺寸（1.9 / 1.14 / 2.8）**。
+电池电压检测只是 v5 主板的附带属性，不是独立机型。
+
+### 5 个真实变体
+
+| 变体 | compatible | 屏幕 | 电池电压 ADC | 红外 | 模组 power-gpios | uart2 |
+|---|---|---|---|---|---|---|
+| v1.3 / 1.9" | `hinlink,h29k-v13` | 170×320 rot270 | ✗ | ✗ | ✓ gpio4_PB5 | ✗ |
+| v1.3 / 1.14" | `hinlink,h29k-v13-114` | 135×240 rot270 | ✗ | ✗ | ✓ gpio4_PB5 | ✗ |
+| v5 / 1.9" | `hinlink,h29k-v5` | 170×320 rot270 | ✓ saradc ch1 | ✓ gpio4_PC6 | ✗ | ✓ |
+| v5 / 1.14" | `hinlink,h29k-v5-114` | 135×240 rot90 | ✓ saradc ch1 | ✓ gpio4_PC6 | ✗ | ✓ |
+| v5 / 2.8" | `hinlink,h29k-v5-28` | 240×320 rot270 | ✓ saradc ch1 | ✓ gpio4_PC6 | ✗ | ✓ |
+
+v1.3 → v5 的实质变化（260 行差异）：
+- **新增**电池电压检测：`adc-battery@0` 走 `io-channels = <&saradc 1>`
+- **新增**红外接收：`gpio-ir-receiver` on gpio4_PC6
+- **新增** `&uart2`（5G 模组串口）
+- **移除** `rfkill-modem` 的 `power-gpios = <&gpio4 RK_PB5>`（模组不再独立供电控制）
+- **移除** `vcc5v0_usb` / `vcc_3v3_s3` / `vcc_1v8_s3` 三路供电轨
+- 背光 pinctrl 上下拉：v1.3 `pull_up` → v5 `pull_none`
+
+### 屏幕差异需要不同内核 patch（硬证据）
+
+`9999-fbtft-adjust-display-offset-for-rotation-h29k-1.9.patch`：
+```c
+rotate 0/180: xs+=35, ys+=0
+rotate 90/270: xs+=0, ys+=35
+```
+
+`9999-fbtft-adjust-display-offset-for-rotation-h29k-1.14.patch`：
+```c
+rotate 0/180: xs+=52, ys+=40
+rotate 90/270: xs+=40, ys+=52
+```
+
+**偏移量完全不同 ⇒ 屏不可用同一份 DTS + 同一份 patch 覆盖。**
+2.8 寸没有对应 patch —— 厂商 DTS 注释标为「2.8 屏幕 new」，可能沿用 1.9 的 +35 偏移，
+**需实机确认**。
+
+### v1.9 屏还有「线序」子变体
+
+厂商 DTS 注释里出现两段1.9 屏配置：
+```
+/* 1.9 微雪 */          spi-max-frequency = <10000000>  170x320 rot270
+/* 1.9 new 线序不对版本 */ spi-max-frequency = <600000>     170x320 rot270
+```
+
+**「微雪」= Waveshare（微雪电子）**，另一段注释为「new 线序不对版本」。
+⇒ 1.9 寸内部至少还分「微雪原厂」与「线序修正版」两种，
+差别在 `spi-max-frequency`（10MHz vs 600kHz）。**这条必须实机确认是哪一种。**
+
+### 另外 2 份 patch
+
+- `9527-rockchip-rk3528-iio-add-adc.patch` —— 给 `rockchip_saradc.c` 加
+  `rockchip,rk3528-saradc` 驱动与 4 通道 IIO 芯片定义。
+  **v5 系列的电池电压读取依赖此 patch，没有它 saradc 读不出数据。**
+- `9528-linux-delfbcon-cursor.patch` —— 在 `fb_flashcursor()` / `fbcon_cursor()`
+  开头加 `return`，禁掉 framebuffer 硬件光标。
+
+### ★ 发现 lede 的 H29K DTS 有背光引脚错误
+
+| 来源 | 背光 GPIO | 极性 |
+|---|---|---|
+| 厂商 v1.3 全部 5 份 | `gpio0 RK_PA0` | `GPIO_ACTIVE_LOW` |
+| **coolsnowwolf/lede** | `gpio0 RK_PA1` | `GPIO_ACTIVE_HIGH` |
+
+**引脚（PA0 vs PA1）与极性都不同。** 按厂商 DTS，`PA0` 才是背光。
+lede 那份会导致背光不亮或反向。**本方案 5 份 DTS 全部采用厂商原值 `PA0 / ACTIVE_LOW`。**
+
+lede 那份还是**混合体**：有红外接收（v5 特征）但无电池 ADC（v1.3 特征），
+且完全没有屏幕 `panel` 的 width/height/rotate 配置 ——
+它更像厂商某个中间版本，而不是 v1.3 或 v5 的精确对应物。
+
+### 已修复的厂商 DTS 缺陷
+
+| 问题 | 文件 | 处理 |
+|---|---|---|
+| `&saradc` 重复定义两次 | v5-2.8 | 合并为一个 |
+| 缺 `adc-battery@0` 节点 | v5-1.14 | 补上（另 4 份都有） |
+| SPI 时钟注释写 10MHz 实际 6MHz | v5 / v5-2.8 | 修正注释 |
+| 5 份全用同一 compatible 无法区分 | 全部 | 改为 `hinlink,h29k-{v13,v13-114,v5,v5-114,v5-28}` |
+
+> ⚠️ **注意**：原始文件的 compatible 全部是 `hinlink,h29k`（5 份完全相同）。
+> 本方案改成了带版本后缀的独立 compatible，**这是本方案做的唯一结构性改动**，
+> 否则 5 份 DTS 在固件里无法区分。若要保持与厂商固件一致，可改回`hinlink,h29k`。
+
+### 验证
+
+5 个变体 DTS 语法全部 PASS；对照组（lede 原版 + 主线 H68K）PASS。

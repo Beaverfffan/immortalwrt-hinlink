@@ -1,0 +1,523 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+
+/dts-v1/;
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/pinctrl/rockchip.h>
+
+#include "rk3528.dtsi"
+
+/ {
+	model = "HINLINK H29K (h29k-v5-28)";
+	// 屏幕: 2.8"  240x320
+	compatible = "hinlink,h29k-v5-28", "rockchip,rk3528";
+
+	aliases {
+		mmc0 = &sdhci;
+		mmc1 = &sdmmc;
+		mmc2 = &sdio0;
+		ethernet0 = &gmac1;
+
+		led-boot = &led_work;
+		led-failsafe = &led_work;
+		led-running = &led_work;
+		led-upgrade = &led_work;
+
+		
+	};
+
+	chosen {
+		stdout-path = "serial0:1500000n8";
+	};
+
+	leds {
+		compatible = "gpio-leds";
+		pinctrl-names = "default";
+		pinctrl-0 = <&modem_4g_led>,<&modem_5g_led>, <&work_led_en>;
+
+		modem_4g: modem_4g {
+			label = "red:modem_4g";
+			gpios = <&gpio4 RK_PC0 GPIO_ACTIVE_LOW>;
+		};
+
+		modem_5g: modem_5g {
+			label = "blue:modem_5g";
+			gpios = <&gpio4 RK_PC3 GPIO_ACTIVE_LOW>;
+		};
+
+		led_work: work {
+			label = "green:work";
+			gpios = <&gpio4 RK_PB7 GPIO_ACTIVE_LOW>;
+		};
+	};
+
+	rfkill-modem {
+		compatible = "rfkill-gpio";
+		name = "rfkill-modem";
+		type = "wwan";
+		reset-gpios = <&gpio4 RK_PB4 GPIO_ACTIVE_LOW>;
+	};
+
+	ir-receiver {
+		compatible = "gpio-ir-receiver";
+		gpios = <&gpio4 RK_PC6 GPIO_ACTIVE_LOW>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&ir_int_pin>;
+	};
+
+
+	// 假设您要读取连接到 ADC 通道 0 的电池电压
+    adc-battery@0 {
+        compatible = "rockchip,rk3528-adc";
+        io-channels = <&saradc 1>; // 指定 ADC 通道编号
+        io-channel-names = "battery_voltage"; // 通道名称
+        status = "okay";
+    };
+	
+
+	sdio_pwrseq: sdio-pwrseq {
+		compatible = "mmc-pwrseq-simple";
+		pinctrl-names = "default";
+		pinctrl-0 = <&wifi_enable_h>;
+		reset-gpios = <&gpio1 RK_PA6 GPIO_ACTIVE_LOW>;
+	};
+
+	vcc5v0_sys: vcc5v0-sys {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc5v0_sys";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+	};
+
+	vcc_3v3: vcc-3v3 {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc_3v3";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		vin-supply = <&vcc5v0_sys>;
+	};
+
+	vcc_1v8: vcc-1v8 {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc_1v8";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+		vin-supply = <&vcc_3v3>;
+	};
+
+	vcc3v3_sd: vcc3v3-sd {
+		compatible = "regulator-fixed";
+		gpio = <&gpio4 RK_PA1 GPIO_ACTIVE_LOW>;
+		regulator-name = "vcc3v3_sd";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		vin-supply = <&vcc_3v3>;
+	};
+
+	vcc_3v3_lcd: vcc-3v3-lcd {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc_3v3_lcd";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		vin-supply = <&vcc_3v3>;
+	};
+
+	vccio_sd: vccio-sd {
+		compatible = "regulator-gpio";
+		gpios = <&gpio4 RK_PB6 GPIO_ACTIVE_HIGH>;
+		regulator-name = "vccio_sd";
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <3300000>;
+		states = <1800000 0x0>, <3300000 0x1>;
+		vin-supply = <&vcc5v0_sys>;
+	};
+
+	vcc_ddr: vcc-ddr {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc_ddr";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <1200000>;
+		regulator-max-microvolt = <1200000>;
+		vin-supply = <&vcc5v0_sys>;
+	};
+
+	vdd_0v9: vdd-0v9 {
+		compatible = "regulator-fixed";
+		regulator-name = "vdd_0v9";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <900000>;
+		regulator-max-microvolt = <900000>;
+		vin-supply = <&vcc5v0_sys>;
+	};
+
+	vdd_arm: vdd-arm {
+		compatible = "pwm-regulator";
+		pwms = <&pwm1 0 5000 1>;
+		regulator-name = "vdd_arm";
+		regulator-min-microvolt = <746000>;
+		regulator-max-microvolt = <1201000>;
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-settling-time-up-us = <250>;
+		pwm-supply = <&vcc5v0_sys>;
+	};
+
+	vdd_logic: vdd-logic {
+		compatible = "pwm-regulator";
+		pwms = <&pwm2 0 5000 1>;
+		regulator-name = "vdd_logic";
+		regulator-min-microvolt = <705000>;
+		regulator-max-microvolt = <1006000>;
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-settling-time-up-us = <250>;
+		pwm-supply = <&vcc5v0_sys>;
+	};
+
+
+
+
+};
+
+&combphy {
+	status = "okay";
+};
+
+&cpu0 {
+	cpu-supply = <&vdd_arm>;
+};
+
+&cpu1 {
+	cpu-supply = <&vdd_arm>;
+};
+
+&cpu2 {
+	cpu-supply = <&vdd_arm>;
+};
+
+&cpu3 {
+	cpu-supply = <&vdd_arm>;
+};
+
+&sfc {
+	status = "okay";
+};
+
+
+&gmac1 {
+	clock_in_out = "output";
+	pinctrl-names = "default";
+	pinctrl-0 = <&rgmii_miim
+		     &rgmii_tx_bus2
+		     &rgmii_rx_bus2
+		     &rgmii_rgmii_clk
+		     &rgmii_rgmii_bus>;
+	phy-handle = <&rgmii_phy>;
+	phy-mode = "rgmii-id";
+	phy-supply = <&vcc_3v3>;
+	snps,reset-active-low;
+	snps,reset-delays-us = <0 20000 100000>;
+	snps,reset-gpio = <&gpio4 RK_PC2 GPIO_ACTIVE_LOW>;
+	status = "okay";
+};
+
+&gpu {
+	mali-supply = <&vdd_logic>;
+	status = "okay";
+};
+
+&mdio1 {
+	rgmii_phy: phy@1 {
+		compatible = "ethernet-phy-ieee802.3-c22";
+		reg = <0x1>;
+	};
+};
+
+&pinctrl {
+	ir {
+		ir_int_pin: ir-int-pin {
+			rockchip,pins = <4 RK_PC6 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+	};
+
+	leds {
+		//lan_led_en: lan-led-en {
+			//rockchip,pins = <4 RK_PC0 RK_FUNC_GPIO &pcfg_pull_none>;
+		//};
+
+		//work_led_en: led-work-en {
+			//rockchip,pins = <4 RK_PB7 RK_FUNC_GPIO &pcfg_pull_none>;
+		//};
+
+		work_led_en: led-work-en {
+			rockchip,pins = <4 RK_PB7 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+
+		modem_4g_led: modem_4g_led{
+			rockchip,pins = <4 RK_PC0 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+
+		modem_5g_led: modem_5g_led{
+			rockchip,pins = <4 RK_PC3 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
+	wifi {
+		wifi_enable_h: wifi-enable-h {
+			rockchip,pins = <1 RK_PA6 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+
+		wifi_host_wake: wifi-host-wake {
+			rockchip,pins = <1 RK_PA7 RK_FUNC_GPIO &pcfg_pull_down>;
+		};
+	};
+
+	bluetooth {
+		bt_enable_h: bt-enable-h {
+			rockchip,pins = <1 RK_PC1 RK_FUNC_GPIO &pcfg_pull_down>;
+		};
+		uart2m1_gpios: uart2m1-gpios {
+			rockchip,pins = <1 RK_PB2 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
+	modem {
+		modem_reset: modem_reset {
+			rockchip,pins = <4 RK_PC1 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
+	lcd {
+		lcd_dc_pin: lcd-dc-pin {
+			rockchip,pins = <1 RK_PB4 RK_FUNC_GPIO &pcfg_pull_up_drv_level_6>;
+		};
+
+		spi1_custom_pins: spi4-custom-pins {
+			rockchip,pins =
+				/* spi1_clk_m2 */
+				<1 RK_PB6 2 &pcfg_pull_none_drv_level_2>,
+				/* spi1_mosi_m2 */
+				<1 RK_PB7 2 &pcfg_pull_none_drv_level_2>;
+		};
+
+		lcd_backlight_pin: lcd-backlight-pin {
+            rockchip,pins = <0 RK_PA0 RK_FUNC_GPIO &pcfg_pull_none>;  // 背光引脚
+        };
+	};
+
+};
+
+&pwm1 {
+	status = "okay";
+};
+
+&pwm2 {
+	status = "okay";
+};
+
+&rng {
+	status = "okay";
+};
+
+&sdhci {
+	bus-width = <8>;
+	mmc-hs200-1_8v;
+	max-frequency = <200000000>;
+	non-removable;
+	pinctrl-names = "default";
+	pinctrl-0 = <&emmc_bus8 &emmc_clk &emmc_cmd &emmc_strb>;
+	vmmc-supply = <&vcc_3v3>;
+	vqmmc-supply = <&vcc_1v8>;
+	status = "okay";
+};
+
+&sdio0 {
+	#address-cells = <1>;
+	#size-cells = <0>;
+	bus-width = <4>;
+	cap-sd-highspeed;
+	cap-sdio-irq;
+	keep-power-in-suspend;
+	max-frequency = <200000000>;
+	mmc-pwrseq = <&sdio_pwrseq>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&sdio0_bus4 &sdio0_cmd &sdio0_clk>;
+	post-power-on-delay-ms = <50>;
+	non-removable;
+	sd-uhs-sdr104;
+	status = "okay";
+
+	sdio_wifi@1 {
+		reg = <1>;
+		interrupt-parent = <&gpio1>;
+		interrupts = <RK_PA7 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "host-wake";
+		pinctrl-names = "default";
+		pinctrl-0 = <&wifi_host_wake>;
+	};
+};
+
+&sdmmc {
+	bus-width = <4>;
+	cap-sd-highspeed;
+	disable-wp;
+	max-frequency = <150000000>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&sdmmc_bus4 &sdmmc_clk &sdmmc_cmd &sdmmc_det>;
+	rockchip,default-sample-phase = <90>;
+	sd-uhs-sdr12;
+	sd-uhs-sdr25;
+	sd-uhs-sdr50;
+	sd-uhs-sdr104;
+	vmmc-supply = <&vcc3v3_sd>;
+	vqmmc-supply = <&vccio_sd>;
+	status = "okay";
+};
+
+&tsadc {
+	status = "okay";
+};
+
+&uart0 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart0m0_xfer>;
+	status = "okay";
+};
+
+&uart2 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart2m1_xfer &uart2m1_ctsn>;
+	status = "okay";
+};
+
+&usb2phy {
+	status = "okay";
+};
+
+&usb2phy0_host {
+	phy-supply = <&vcc5v0_sys>;
+	status = "okay";
+};
+
+&usb_host0_ehci {
+	status = "okay";
+};
+
+&usb_host0_ohci {
+	status = "okay";
+};
+
+&usb_host0_xhci {
+	dr_mode = "host";
+	status = "okay";
+};
+
+&usb2phy0_otg {
+	phy-supply = <&vcc5v0_sys>;
+	vbus-supply = <&vcc_3v3>;
+	status = "okay";
+};
+
+
+&gpio4 {
+    modem_reset_en {
+        gpio-hog;
+        gpios = <4 RK_PB4 GPIO_ACTIVE_HIGH>;
+        output-high;
+        line-name = "Modem_Reset_EN";
+    };
+};
+
+&saradc {
+	compatible = "rockchip,rk3528-saradc";
+	vref-supply = <&vcc_1v8>;
+	status = "okay";
+};
+
+&spi1 {  // 定义SPI1制器节点
+	#address-cells = <1>;  // 定义子节点的地址单元数量为1
+	#size-cells = <0>;  // 定义子节点的大小单元数量为0
+	assigned-clocks = <&cru CLK_SPI1>;  // 给SPI1分配一个时钟信号
+	assigned-clock-rates = <200000000>;  // 为SPI1分配的时钟频率，200MHz
+	num-cs = <1>;  // SPI4控制器最多支持1个CS（芯片选择）引脚
+	pinctrl-names = "default";  // 定义管脚控制组名称为"default"
+	pinctrl-0 = <&spi1_custom_pins &lcd_backlight_pin>; // 分配SPI引脚和CS引脚
+	status = "okay";  // 激活SPI4控制器
+
+	st7789v_panel: panel@0 {  // 定义LCD面板的子节点
+		compatible = "sitronix,st7789v";  // 指定LCD面板兼容ST7789V驱动器
+		reg = <0>;  // SPI设备地址，通常为0
+		power-supply = <&vcc_3v3_lcd>;  // LCD面板的电源输入，连接到3V电源
+
+		pinctrl-names = "default";  // 定义管脚控制组名称为"default"
+		pinctrl-0 = <&lcd_dc_pin>;  // 分配数据/命令选择引脚
+		dc-gpios = <&gpio1 RK_PB4 GPIO_ACTIVE_HIGH>; // DC 引脚
+		backlight-gpios = <&gpio0 RK_PA0 GPIO_ACTIVE_LOW>;  // 背光引脚
+		// fps = <20>;  // 刷新率，未启用
+
+		
+
+		/* 2.8 屏幕 new */
+      	spi-max-frequency = <6000000>;  // 10Mhz
+		width = <240>;  // 显示屏宽度
+		height = <320>;  // 显示屏高度
+		buswidth = <8>;  // 设置显示屏的总线宽度为8位
+		rotate = <270>;
+		spi-cpol;  // SPI时钟极性
+		spi-cpha;  // SPI时钟相位
+
+
+
+		/* 1.9 new */
+      	//spi-max-frequency = <6000000>;  // 10Mhz
+		//width = <170>;  // 显示屏宽度
+		//height = <320>;  // 显示屏高度
+		//buswidth = <8>;  // 设置显示屏的总线宽度为8位
+		//rotate = <270>;
+		//spi-cpol;  // SPI时钟极性
+		//spi-cpha;  // SPI时钟相位
+
+
+		/* 1.14 默认版本  6Mhz */
+        //spi-max-frequency = <6000000>;  // 最大SPI通信频率设置为6MHz
+		//width = <135>;  // 显示屏宽度
+		//height = <240>;  // 显示屏高度
+		//// fps = <20>;  // 刷新率，未启用
+		//buswidth = <8>;  // 设置显示屏的总线宽度为8位
+		//rotate = <90>;  // 显示旋转90度
+		/* debug: 0-7 */
+		//debug = <0>;  // 调试级别设置，0表示关闭调试
+		//spi-cpol;  // SPI时钟极性
+		//spi-cpha;  // SPI时钟相位
+
+
+
+		/* 1.9 微雪线序不对版本  */
+		//spi-max-frequency = <10000000>;  // 10Mhz
+      	//spi-max-frequency = <6000000>;  // 10Mhz
+		//width = <170>;  // 显示屏宽度
+		//height = <320>;  // 显示屏高度
+		//buswidth = <8>;  // 设置显示屏的总线宽度为8位
+		//rotate = <270>;
+		//spi-cpol;  // SPI时钟极性
+		//spi-cpha;  // SPI时钟相位
+
+
+
+
+
+		/* debug: 0-7 */
+		debug = <0>;  // 调试级别设置，0表示关闭调试
+
+	};
+};
+
