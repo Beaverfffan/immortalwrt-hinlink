@@ -76,11 +76,13 @@ hinlink,opc-h69k)
 
 
 # ---- H69K-mini：四网口（= H68K max）----
-# 网络构成与 H69K 相同（1×GMAC + 2×RTL8125），口数相同；
+# 网络构成 = 2×GMAC(gmac0+gmac1) + 2×RTL8125 2.5G = 4 口
+# 枚举：gmac0->eth0  gmac1->eth1  rtl8125_1->eth2  rtl8125_2->eth3
+# 与 H68K 四网口机型同样式：WAN =板载 gmac0，LAN = 其余三个
 # 差异在形态与 5G 模组，不在网口数量。
 
 hinlink,opc-h69k-mini)
-		ucidef_set_interfaces_lan_wan 'eth1 eth2' 'eth0'
+		ucidef_set_interfaces_lan_wan 'eth1 eth2 eth3' 'eth0'
 		;;
 
 

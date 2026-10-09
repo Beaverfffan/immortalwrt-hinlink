@@ -20,6 +20,7 @@
 
 	aliases {
 		ethernet0 = &gmac0;
+		ethernet1 = &gmac1;
 	};
 };
 &gmac0 {
@@ -46,7 +47,26 @@
 };
 
 &gmac1 {
-	status = "disabled";
+	assigned-clocks = <&cru SCLK_GMAC1_RX_TX>, <&cru SCLK_GMAC1>;
+	assigned-clock-parents = <&cru SCLK_GMAC1_RGMII_SPEED>;
+	assigned-clock-rates = <0>, <125000000>;
+	clock_in_out = "output";
+	phy-mode = "rgmii-id";
+	phy-supply = <&vcc3v3_sys>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&gmac1_miim
+		     &gmac1_tx_bus2
+		     &gmac1_rx_bus2
+		     &gmac1_rgmii_clk
+		     &gmac1_rgmii_bus
+		     &gmac1_rstn>;
+	snps,reset-gpios = <&gpio1 RK_PB0 GPIO_ACTIVE_LOW>;
+	snps,reset-active-low;
+	snps,reset-delays-us = <0 20000 100000>;
+	tx_delay = <0x4f>;
+	rx_delay = <0x26>;
+	phy-handle = <&rgmii_phy1>;
+	status = "okay";
 };
 
 &mdio0 {

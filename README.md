@@ -554,3 +554,89 @@ combphy0/1/2: rk3568-naneng-combphy
 
 10 个 DTS 语法全部 PASS；对照组（主线原生 h68k）PASS。
 三方一致性校验通过：设备定义引用 10 个 DTS = 磁盘 10 个文件，无孤儿无缺失。
+---
+
+## H69K-mini 口数修正（第六批）
+
+用户指出：`h69k-mini` 继承主线 okay、`LAN 'eth1 eth2' / WAN 'eth0'` 不对，
+「还是有 eth1 2 3 吧」—— **四网口就该有 4 个接口**。
+
+### ★ 第九次撤回：h69k-mini 只有 3 口是错的
+
+我上一轮把 h69k-mini 写成「与 H69K 网络构成相同」并屏蔽了 gmac1：
+```
+&gmac1 { status = "disabled"; };← 只剩 3 口
+aliases { ethernet0 = &gmac0; };             ← 少了 ethernet1
+02_network: LAN 'eth1 eth2' / WAN 'eth0'    ← 只 3 个接口
+```
+**三处都错。** H68K 四网口的 DTS 明确写着：
+```dts
+&gmac0 { ... status = "okay"; };
+&gmac1 { ... status = "okay"; };
+aliases { ethernet0 = &gmac0; ethernet1 = &gmac1; };
+```
+⇒ **四网口 = 2×GMAC + 2×RTL8125**，两个 GMAC 都用。
+
+### 修正后
+
+| 机型 | GMAC | PCIe | 口数 | 02_network |
+|---|---|---|---|---|
+| h69k（三网口） | gmac0 only | pcie3x1 + pcie3x2 | **3** | `eth1 eth2` / `eth0` |
+| **h69k-mini（四网口）** | **gmac0 + gmac1** | pcie3x1 + pcie3x2 | **4** | `eth1 eth2 eth3` / `eth0` |
+
+h69k-mini 已恢复完整的 `&gmac1` 配置（含 `rgmii_phy1` 引用、`tx_delay=0x4f`/`rx_delay=0x26`）
+并补上 `ethernet1 = &gmac1` alias。
+
+枚举顺序（两机型通用）：
+```
+gmac0     -> eth0    aliases ethernet0（板载 RGMII，通常作 WAN）
+gmac1     -> eth1    aliases ethernet1（板载第二路 RGMII）
+rtl8125_1 -> eth2    PCIe bus 0x10
+rtl8125_2 -> eth3    PCIe bus 0x20
+```
+
+### ★ 新增 tools/check_port_count.py（口数自检）
+
+这次错误能溜过去，是因为没有任何工具校验「口数」这个维度。现补上：
+
+```
+DTS                                         DTS口     期望      映射数  LAN / WAN
+rk3568-hinlink-h68k-a-sata                     2      2        2  eth1 / eth0            OK
+rk3568-hinlink-h68k-a                          2      2        2  eth1 / eth0            OK
+rk3568-hinlink-h68k-c-sata                     4      4        4  eth0 eth2 eth3 / eth1  OK
+rk3568-hinlink-h68k-c-usb3                     4      4        4  eth0 eth2 eth3 / eth1  OK
+rk3568-hinlink-h68k-c                          4      4        4  eth0 eth2 eth3 / eth1  OK
+rk3568-hinlink-h68k-d-sata                     4      4        4  eth1 eth2 eth3 / eth0  OK
+rk3568-hinlink-h68k-d                          4      4        4  eth1 eth2 eth3 / eth0  OK
+rk3568-hinlink-h68k-new                        4      4        4  eth1 eth2 eth3 / eth0  OK
+rk3568-hinlink-h69k-3eth                       3      3        3  eth1 eth2 / eth0       OK
+rk3568-hinlink-h69k-mini                       4      4        4  eth1 eth2 eth3 / eth0  OK
+
+DTS 机型数: 10    不一致: 0
+```
+
+**校验逻辑**：`口数 = okay 的 GMAC 数 + okay 的 PCIe 控制器数`，
+且 `02_network 的 LAN+WAN 接口数` 必须等于口数。
+
+**写这个脚本时踩的坑（很关键）**：
+
+1. **只扫 DTS 会把四网口误判成两网口** ——
+   `pcie3x1/pcie3x2` 在 DTS 里**没有显式节点**，继承
+   `rk3568-hinlink-opc.dtsi`（dtsi 里两者都 `status = "okay"`）。
+   必须 **dtsi 作基线 + DTS 覆盖**。第一版脚本没做，10 个机型全报「不一致」。
+
+2. **节点正则要匹配 `&gmac0 {`（带 &）** ——
+   DTS 里是 `&gmac0 {`，不是 `gmac0 {`。第一版按后者匹配，全算成 0 口。
+
+3. **`02_network` 的 case 续行要处理反斜杠** ——
+   `hinlink,opc-h68k-a|\` + 换行 + `	hinlink,opc-h68k-a-sata|\` + …
+   split 后每项会带上 `\` 和换行，必须 `.strip().strip('\\').strip()`。
+   第一版漏了，3 个 SATA 变体全报「无映射」。
+
+**这个脚本的價值**：能自动抓出「DTS 口数与 02_network 映射不匹配」——
+这类错误在dtsc 语法检查和 phandle 检查里都发现不了，只有看映射表才知道。
+
+### 顺带修正说明
+
+`02_network` 注释里补了枚举顺序推导，README 与 armv8.mk 的H69K 谱系说明
+改为「H69K 屏蔽 gmac1 = 三口；H69K-mini 不屏蔽 = 四口」。

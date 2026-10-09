@@ -65,10 +65,13 @@ endef
 #     与 combphy0 无关。
 #
 # ★ H69K 型号谱系（用户确认）
-#   H69K       三网口 = 1×GMAC(gmac0) + 2×RTL8125 2.5G
-#   H69K-mini  四网口 = 同上（= H68K max）
-#   ——屏蔽的是 gmac1（少一路 GMAC），两路 PCIe 始终保留。
-#   原「双网口 h69k-mini」是本方案臆造，已删除。
+#   H69K三网口 = 1×GMAC(gmac0) + 2×RTL8125 2.5G        =>屏蔽 gmac1
+#   H69K-mini  四网口 = 2×GMAC(gmac0+gmac1) + 2×RTL8125  => 不屏蔽 gmac1
+#   H69K-mini 即 H68K max，两者网络构成相同。
+#   原「双网口 h69k-mini」与「H69K-mini 只 3 口」都是臆造，已两次修正。
+#
+#   枚举顺序：gmac0->eth0  gmac1->eth1  rtl8125_1->eth2  rtl8125_2->eth3
+#   四网口机型统一 WAN=eth0（板载 gmac0），LAN=eth1 eth2 eth3。
 
 # ---- H68K 老机器：a-b（2022 双千兆，2 口）----
 
