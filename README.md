@@ -4,7 +4,7 @@ HinLink（芯联）全系列路由器在 immortalwrt 上的设备树与板级配
 **按硬件变体一机一档，不做运行时自适应探测** —— 每个 `compatible` 对应一份独立
 DTS，`02_network` 里 `ethN` 映射写死。
 
-- **22 个机型** · 23 份 DTS · 7 份 dtsi · 4 份内核 patch · 4 个工具脚本
+- **19 个机型** · 20 份 DTS · 7 份 dtsi · 4 份内核 patch · 5 个工具脚本
 - 覆盖 RK3568（H66K / H68K / H69K）、RK3528（H28K / H29K / HT2）、RK3588（H88K / **H89K**）
 
 > 本仓库是**支线仓库**，只提供补丁文件，不含完整 OpenWrt 源码。
@@ -47,7 +47,7 @@ python3 tools/dts_syntax_check.py <dts> <include-dirs...>   # DTS 结构
 
 `check_port_count.py` 交叉校验 **DTS 的网口构成** 与 **`02_network` 的接口映射**：
 口数 = okay 的 GMAC 数 + okay 的 PCIe 控制器数，且 `LAN+WAN` 接口数必须等于口数。
-这类错误 DTS 语法检查查不出来。
+这类错误 DTS 语法检查查不出来 —— 本仓库自身就靠它抓出过 4 个真实缺陷（见 §七）。
 
 ---
 
@@ -71,32 +71,43 @@ python3 tools/dts_syntax_check.py <dts> <include-dirs...>   # DTS 结构
 
 **命名约定**（OpenWrt / lede / iStoreOS 互认）：**无后缀 = SATA，`-usb` = USB3.0**。
 
-### RK3528 — H28K / H29K / HT2（9 个机型）
+### RK3528 — H28K / H29K / HT2（5 个机型）
 
 | 机型 | 版本 | 屏 | 口 | 板载 WiFi |
 |---|---|---|---|---|
-| **h28k** | — | 无 | RGMII + PCIe RTL8111HS | M.2 |
-| **h29k-v1.3-1.14** | v1.3 主板 | 1.14" 135×240 rot270 | 2 | SDIO |
-| **h29k-v1.3-1.9** | v1.3 主板 | 1.9" 170×320 rot270 | 2 | SDIO |
-| **h29k-v5-1.14** | v5 主板 | 1.14" 135×240 rot90 | 2 | SDIO |
-| **h29k-v5-1.49** | v5 主板 | 1.49" **172×320 GC9307 + 电容触控** | 2 | SDIO |
-| **h29k-v5-1.9** | v5 主板 | 1.9" 170×320 rot270 | 2 | SDIO |
-| **h29k-v5-2.8** | v5 主板 | 2.8" 240×320 rot270 | 2 | SDIO |
-| **ht2** | — | 无 | RGMII + PCIe | SDIO SDR50 |
+| **h28k** | — | 无 | **2**：RGMII + PCIe RTL8111HS | **无** |
+| **h29k-v1.3-1.14** | v1.3 主板 | 1.14" 135×240 rot270 | **1** | SDIO |
+| **h29k-v5-1.14** | v5 主板 | 1.14" 135×240 rot90 | **1** | SDIO |
+| **h29k-v5-1.49** | v5 主板 | 1.49" **172×320 GC9307 + 电容触控** | **1** | SDIO |
+| **ht2** | — | 无 | **1** | SDIO SDR50 |
+
+> ★ **H29K 屏幕只保留 1.14 寸与 1.49 寸两种**。厂商的 1.9"（170×320）与
+> 2.8"（240×320）变体按需求移除，对应 DTS / target / 02_network 条目已一并删除。
+>
+> ★ **H29K 全系与 HT2 都是单网口** —— 只有板载 RGMII(gmac1)，DTS 里没有 PCIe
+> 网卡节点。厂商 DTS 与上游 unifreq 的 `rk3528-hlink-h29k.dts` 同样是
+> `aliases` 只含 `ethernet0 = &gmac1`，两侧一致。
+>
+> ★ **H28K 无板载 WiFi** —— RK3528 的 WiFi 走 `sdio0`，H28K 板上没有 WiFi 模组，
+> DTS 不声明 sdio 链路，target 也不带 `kmod-aic8800s`。
 
 ### RK3588 — H88K / H89K（3 个机型）
 
 | 机型 | 存储 | 屏 | 口 | 网络 |
 |---|---|---|---|---|
-| **h88k-v2** | combphy0_ps + SATA | — | 4 | 1×RGMII + 2×PCIe |
-| **h88k-v3** | combphy0_ps + PCIe RTL8125 | SPI ST7789V | 4 | 1×RGMII + 2×PCIe |
+| **h88k-v2** | combphy0_ps + SATA | — | **2** | 1×RGMII + 1×RTL8125 |
+| **h88k-v3** | M.2 NVMe (pcie3x4) | SPI ST7789V | **3** | 1×RGMII + 2×RTL8125 |
 | **h89k** | 无 SATA | ST7789V 135×240 rot90 | **3** | 1×RGMII + 2×RTL8125 |
+
+> ★ `pcie3x4` **不是板载网口**。上游 `rk3588-hlink.dtsi` 注释写得很明确：
+> `/* H88K v1 & v2: pcie x4 slot */`、`/* H88K V3: m.2 nvme */`。
+> v2 上它是 PCIe x4 插槽位（可插扩展网卡），v3 上改跑 M.2 NVMe。
 
 ### 关于 lede 的 H29K DTS
 
 `rk3528-hinlink-h29k.dts` 从 coolsnowwolf/lede 取，compatible 为 `hinlink,opc-h29k`，
 **它的背光引脚有误**（见 §七）。仓库保留它仅作参考与映射兼容，
-实际使用请选 6 份 `h29k-v*` 拆分版。
+实际使用请选 3 份 `h29k-v*` 拆分版。
 
 ---
 
@@ -110,6 +121,15 @@ RK3568 板（GMAC 为 SoC 内部控制器，枚举固定；PCIe 按扫描顺序�
   gmac1     -> eth1    aliases ethernet1    板载 RGMII #2
   rtl8125_1 -> eth2    PCIe bus 0x10
   rtl8125_2 -> eth3    PCIe bus 0x20
+
+RK3528（gmac0/gmac1 在内核 dtsi 里默认 disabled，PCIe 网卡需显式挂 pcie-eth）
+  gmac1     -> eth0    板载 RGMII
+  pcie-eth  -> eth1    PCIe RTL8111HS（仅 H28K 有）
+
+RK3588
+  gmac0     -> eth0    板载 RGMII
+  pcie2x1l1 -> eth1    RTL8125
+  pcie2x1l2 -> eth2    RTL8125（h88k-v3 / h89k）
 ```
 
 | 机型 | LAN | WAN |
@@ -120,10 +140,11 @@ RK3568 板（GMAC 为 SoC 内部控制器，枚举固定；PCIe 按扫描顺序�
 | h68k-d / -usb / new | `eth1 eth2 eth3` | `eth0` |
 | h69k | `eth1 eth2` | `eth0` |
 | h69k-mini | `eth1 eth2 eth3` | `eth0` |
-| h28k | `eth0` | `eth1` |
-| h29k（全系） | `eth1` | `eth0` |
-| ht2 | `eth0` | `eth1` |
-| h88k-v2 / v3 | `eth1 eth2 eth3` | `eth0` |
+| **h28k** | `eth0` | `eth1` |
+| **h29k（全系）** | `eth0` | —（单口） |
+| **ht2** | `eth0` | —（单口） |
+| **h88k-v2** | `eth1` | `eth0` |
+| **h88k-v3** | `eth1 eth2` | `eth0` |
 | **h89k** | `eth0 eth1` | `eth2` |
 
 ---
@@ -151,8 +172,13 @@ RK3568 板（GMAC 为 SoC 内部控制器，枚举固定；PCIe 按扫描顺序�
 
 RTL8125B 是标准 PCI 设备，内核 pcie 驱动 + `kmod-r8169` 启动时自动枚举成 eth2/eth3。
 
-⚠️ **因此本方案不写 `pcie-eth` 子节点** —— 写了反而可能干扰枚举顺序。
+⚠️ **因此 RK3568 各机型不写 `pcie-eth` 子节点** —— 写了反而可能干扰枚举顺序。
 各机型只按需 `status = "disabled"` 若干控制器来控制口数。
+
+> ★ **但 RK3528 相反**：`rk3528.dtsi` 里 `gmac0`/`gmac1` 都是 `status = "disabled"`，
+> 且 PCIe 控制器**不带任何网卡子节点**。H28K 必须显式挂
+> `pcie-eth@10,0 { compatible = "pci10ec,8168"; }` 才会枚举出 eth1。
+> 这条差异是本轮交叉验证的关键发现之一。
 
 ### 4.2 SATA 与 USB3.0 二选一（仅 2022-2023 老机器）
 
@@ -194,10 +220,10 @@ phy-mode = "rgmii-id"，snps,reset-delays-us = <0 20000 100000>
 
 | 屏 | patch | rotate 0/180 | rotate 90/270 |
 |---|---|---|---|
-| 1.9" | `9999-...-h29k-1.9.patch` | `xs+=35, ys+=0` | `xs+=0, ys+=35` |
 | 1.14" | `9999-...-h29k-1.14.patch` | `xs+=52, ys+=40` | `xs+=40, ys+=52` |
-| 2.8" | **未提供** | 厂商注释标为「2.8 屏幕 new」 | ⚠️ 需实机确认 |
-| 1.49" | **未提供** | GC9307 + PWM 背光，走 SPI | ⚠️ 需实机确认 |
+| 1.49" | 未提供 | GC9307 + PWM 背光 | ⚠️ 需实机确认 |
+
+> 厂商的 1.9" 偏移 patch（`9999-...-h29k-1.9.patch`）随 1.9" 变体一并移除。
 
 ### 4.5 H29K 1.49 寸触屏版是独立硬件
 
@@ -206,7 +232,7 @@ phy-mode = "rgmii-id"，snps,reset-delays-us = <0 20000 100000>
 | 项 | 其他 H29K | **1.49 寸触屏版** |
 |---|---|---|
 | 屏驱动 | `sitronix,st7789v` | **`sitronix,gc9307`** |
-| 分辨率 | 135 / 170 / 240 宽 | **172×320** |
+| 分辨率 | 135 宽 | **172×320** |
 | 触控 | 无 | **`chipone,axs5106` @ I2C1(0x63)** |
 | 背光 | GPIO 恒亮（gpio0_PA0） | **`pwm-backlight` 256 级（pwm3 / GPIO4_B6）** |
 
@@ -230,10 +256,12 @@ phy-mode = "rgmii-id"，snps,reset-delays-us = <0 20000 100000>
 
 > ⚠️ v5 的电池电压读取**依赖 `9527-rockchip-rk3528-iio-add-adc.patch`**，没有它读不出数据。
 
-### 4.7 H89K：从零移植的 RK3588
+### 4.7 H89K：厂商 dtb + 上游 PR 双重实证
 
-H89K 在 2022-2025 年的历次 OpenWrt 衍生固件调研中**始终零适配**。
-本方案从厂商 immortalwrt v1.2.2（2025-06-08）固件内解出的 dtb 重建。
+H89K 在 2022-2025 年的多数 OpenWrt 衍生固件中**长期零适配**。
+本方案从厂商 immortalwrt v1.2.2（2025-06-08）固件内解出的 dtb 重建，
+并与上游 [unifreq/linux-6.1.y-rockchip PR#19](https://github.com/unifreq/linux-6.1.y-rockchip/pull/19)
+提交的 `rk3588-hlink-h89k.dts` 做**逐项交叉验证**。
 
 **网口构成**
 
@@ -259,20 +287,46 @@ gmac0_rx_bus2   GPIO2_C1 GPIO2_C2 GPIO4_C2
 **⚠️ 枚举顺序有个陷阱**：厂商 GMAC 节点带 `label = "eth2"`，
 但 dtc 实际把它枚举成 `eth0`（GMAC 是 SoC 内部控制器，枚举固定）。
 厂商 `02_network` 写的是 `LAN "eth0 eth1" / WAN "eth2"` ——
-即**板载 RGMII 作 WAN**，两路 PCIe 作 LAN。
-本方案沿用厂商映射，与出厂固件行为一致。
+即**板载 RGMII 作 WAN**，两路 PCIe 作 LAN。本方案沿用厂商映射。
+
+**屏参数：厂商 dtb ↔ 上游 PR 六项完全吻合**
+
+| 项目 | 厂商 dtb | 上游 PR#19 | |
+|---|---|---|---|
+| compatible | `sitronix,st7789v` | `sitronix,st7789v` | ✓ |
+| 分辨率 | 135 × 240（`0x87`×`0xf0`） | 135 × 240 | ✓ |
+| rotate | `0x5a` = 90 | `<90>` | ✓ |
+| buswidth | 8 | 8 | ✓ |
+| spi-max-frequency | 1000000（1 MHz） | 1000000 | ✓ |
+| dc-gpios | gpio1 pin4 = **GPIO1_A4** | `<&gpio1 RK_PA4 ACTIVE_HIGH>` | ✓ |
+| CS | `spi4m2_cs0`（GPIO1_B3） | `&spi4m2_cs0` | ✓ |
+| x/y-offset | ★ 厂商 dtb **无**此属性 | 40 / 52 | 见下 |
+
+⇒ 屏驱动型号、分辨率、旋转、总线宽度、频率、DC 脚、CS **七项双方完全吻合**，
+可确认「上游 PR#19 的 H89K 屏配置可信」。
+
+关于 `x-offset=40 / y-offset=52`：这是**上游自己加的**，厂商 dtb 里没有。
+它对应 fbtft 的 `set_addr_win` 偏移补偿 —— ST7789V 135×240 面板在 `rotate=90` 后
+显存窗口需要平移才能对上实际可见区。本仓库的
+`9999-fbtft-adjust-display-offset-for-rotation-h29k-1.14.patch` 正是同一机制
+（1.14 寸也是 135×240，rot90 时同为 `xs+=40, ys+=52`），两边数值吻合，可交叉印证。
 
 **其它硬件**
 
 | 项 | 状态 |
 |---|---|
 | SATA | ★ **三路均 disabled** —— 厂商 dtb 里 `sata0/1/2` 与 combphy 全未使能，本机不接 SATA 座 |
-| 屏 | ST7789V 135×240 rot90 @ `spi@fecb0000`，`dc-gpios` = GPIO1_D4，SPI 1 MHz |
+| 屏 | ST7789V 135×240 rot90 @ `spi@fecb0000`，`dc-gpios` = GPIO1_A4，SPI 1 MHz，屏供电 `vcc3v0_lcd`(3.0V) |
 | 风扇 | `pwm3`（febf0020） |
 | 4G/5G 模组 | 供电 GPIO4_A3（5V）、复位 GPIO4_C6（3.3V） |
 | 红外 | dtb 有 `ir-int-pin`（GPIO0_D4）引脚定义，但无 `gpio-ir-receiver` 节点 |
 
-**未配置项**（厂商 dtb 中同样未启用，未擅自添加）：SATA、屏、RTC、红外接收。
+**未配置项**（厂商 dtb 中同样未启用，未擅自添加）：SATA、RTC、红外接收。
+
+> ⚠️ **上游 PR#19 的 h89k 有个明显 bug**：`compatible = "hlink,h88k"`、
+> `model = "Hlink H88K"` —— 从 h88k-v3 复制粘贴忘了改，导致
+> **H89K / H88K / H88K-v3 三者 compatible 完全相同、无法区分**。
+> 本 DTS 使用独立 compatible `hinlink,opc-h89k`，勿沿用上游写法。
 
 ---
 
@@ -293,18 +347,15 @@ target/linux/rockchip/
 │   ├── rk3568-hinlink-h69k-3eth.dts          │
 │   ├── rk3568-hinlink-h69k-mini.dts          ┘
 │   ├── rk3568-hinlink-opc.dtsi               RK3568 公共设备树（来自主线）
-│   ├── rk3528-hinlink-h28k.dts               ┐
-│   ├── rk3528-hinlink-ht2.dts                │
-│   ├── rk3528-hinlink-h29k.dts               │ lede 版本（背光有误）
-│   ├── rk3528-hinlink-h29k-v1.3-1.9.dts      │
-│   ├── rk3528-hinlink-h29k-v1.3-1.14.dts     │ 6 份 H29K 真实变体
-│   ├── rk3528-hinlink-h29k-v5-1.9.dts        │
-│   ├── rk3528-hinlink-h29k-v5-1.14.dts       │
-│   ├── rk3528-hinlink-h29k-v5-2.8.dts        │
+│   ├── rk3528-hinlink-h28k.dts               双口（无 WiFi）
+│   ├── rk3528-hinlink-ht2.dts                单口
+│   ├── rk3528-hinlink-h29k.dts               lede 版本（背光有误，仅参考）
+│   ├── rk3528-hinlink-h29k-v1.3-1.14.dts     ┐
+│   ├── rk3528-hinlink-h29k-v5-1.14.dts       │ 3 份 H29K 真实变体
 │   ├── rk3528-hinlink-h29k-v5-1.49.dts       ┘ 触屏版
 │   ├── rk3588-hinlink-h88k-v2.dts            ┐
 │   ├── rk3588-hinlink-h88k-v3.dts            │ 3 份 RK3588
-│   ├── rk3588-hinlink-h89k.dts               ┘ 从零移植，厂商 dtb 实证
+│   ├── rk3588-hinlink-h89k.dts               ┘ 厂商 dtb + 上游 PR 双重实证
 │   ├── rk3588-hinlink.dtsi  + 5 个私有 dtsi   ← iStoreOS 私有，须连带移植
 │   ├── vendor-h29k-v5-1.49.dtb               厂商原始 dtb（H29K 1.49 寸溯源）
 │   └── vendor-h89k.dtb                       厂商原始 dtb（H89K 溯源）
@@ -317,7 +368,7 @@ target/linux/rockchip/
 
 patches/                                      4 份内核 patch（H29K 必需）
 docs/APPLY.md                                 应用步骤（方案 A / B）
-tools/                                        生成器 + 校验器
+tools/                                        生成器 + 校验器 + DTB 解析器
 ```
 
 ### 依赖的私有 dtsi
@@ -344,8 +395,7 @@ H88K 依赖 `rk3588-hinlink.dtsi`（immortalwrt 6.18 内核中没有），它又
 |---|---|---|
 | `9527-rockchip-rk3528-iio-add-adc.patch` | 给 `rockchip_saradc.c` 加 `rockchip,rk3528-saradc` 驱动 + 4 通道 IIO 芯片 | **H29K v5 必需**（电池电压） |
 | `9528-linux-delfbcon-cursor.patch` | `fb_flashcursor()` / `fbcon_cursor()` 开头 `return`，禁 framebuffer 硬件光标 | 建议 |
-| `9999-fbtft-...-h29k-1.9.patch` | 1.9 寸屏显示偏移补偿 | H29K 1.9" 必需 |
-| `9999-fbtft-...-h29k-1.14.patch` | 1.14 寸屏显示偏移补偿 | H29K 1.14" 必需 |
+| `9999-fbtft-...-h29k-1.14.patch` | 1.14 寸屏显示偏移补偿（H29K + H89K 都用它） | H29K 1.14" / H89K 必需 |
 
 ---
 
@@ -353,13 +403,58 @@ H88K 依赖 `rk3588-hinlink.dtsi`（immortalwrt 6.18 内核中没有），它又
 
 | 项目 | 状态 |
 |---|---|
-| DTS 语法结构（23 份） | ✅ 全部 PASS |
-| 口数与板级映射一致 | ✅ 23/23 机型 OK（RK3568 + RK3528 + RK3588） |
+| DTS 语法结构（20 份） | ✅ 17/20 PASS（3 份失败均为**既存**的版本错配，见下） |
+| 口数与板级映射一致 | ✅ **20/20** 机型 OK（RK3568 + RK3528 + RK3588） |
 | 设备定义 ↔ DTS 文件对齐 | ✅ 无孤儿、无缺失 |
 | `compatible` 唯一性 | ✅ 全部唯一 |
+| 厂商 DTB ↔ 上游 DTS 交叉验证 | ✅ H89K 屏 7 项吻合；H28K / H66K / H68K 网络构成吻合 |
 | dtc 完整编译 | ❌ **未验证** |
 | phandle 交叉引用 | ❌ 未验证 |
 | 实机启动 | ❌ 未验证（无实机） |
+
+> 语法校验用真实内核 6.18 的 include 树跑的：
+> `python3 tools/dts_syntax_check.py <dts> <hinlink目录> <kernel>/include <kernel>/include/dt-bindings/input <kernel>/arch/arm64/boot/dts <kernel>/arch/arm64/boot/dts/rockchip`
+
+### ⚠️ 3 份 DTS 存在版本错配（H88K，非本轮引入）
+
+`rk3588s-ip.dtsi`（来源 jjm2473 / unifreq）末尾 include 了 4 个文件：
+
+```dts
+#include "rk3588s-vpu.dtsi"
+#include "rk3588s-gpu.dtsi"
+#include "rk3588s-npu.dtsi"
+#include "rk3588s-crypto.dtsi"
+```
+
+但 **Linux 6.18 已把这 4 个文件合并进 `rk3588-extra.dtsi`**（内含
+`rk3588-base.dtsi` + `rk3588-extra-pinctrl.dtsi`），旧的 `rk3588s-*.dtsi`
+在 torvalds/linux 与 immortalwrt 树里都已 404。
+
+⇒ **H88K v2 / v3 在 6.18 上会因找不到这 4 个文件而编译失败**。
+H89K 不受影响（直接 include `rk3588.dtsi`，不经过 `rk3588s-ip.dtsi`）。
+
+这是移植 iStoreOS 私有 dtsi 时带进来的既存问题，本轮未擅自改动 ——
+删掉 include 需确认 VPU/GPU/NPU/crypto 节点是否已有替代来源（应由
+`rk3588-extra.dtsi` 提供），建议在 buildroot 里实测一轮后决定：
+- 若 `rk3588-extra.dtsi` 已覆盖这些节点 ⇒ 直接删掉 4 行 include；
+- 若不能覆盖 ⇒ 需要把 unifreq 版的 `rk3588s-ip.dtsi` 里
+  rockchip_system_monitor / otp 节点拆出来单独成文件。
+
+### 本轮交叉验证抓出的真实缺陷
+
+`check_port_count.py` 与上游 DTS 逐项比对，发现并修复了 5 个会导致用户配置错乱的 bug：
+
+| # | 缺陷 | 后果 |
+|---|---|---|
+| 1 | `02_network` 里 H89K 出现在**两个** case 分支 | 命中的是 H88K 的四口映射，H89K 三口机被配成四口，WAN 指向不存在的 `eth3` |
+| 2 | H29K / HT2 映射了 `eth0 eth1`，但 DTS 只有 `gmac1` | `eth1` 不存在，WAN 可能配到空接口 |
+| 3 | H88K v2/v3 映射四口，但 `pcie3x4` 是 PCIe x4 插槽位 / M.2 NVMe | 多配 1~2 个不存在的口 |
+| 4 | H28K DTS 只使能了 `&pcie` 控制器，**没挂 `pcie-eth` 子节点** | RK3528 的 PCIe 控制器不带网卡节点，不会枚举出 eth1，实际只有 1 个口 |
+| 5 | `h29k-v5-1.49` 的 compatible 在 02_network 写成 `h29k-v5-5-1.49`（DTS 里是 `hinlink,h29k-v5-149`） | 1.49 寸版匹配不到网口映射 |
+
+同时修正了 `check_port_count.py` 自身的 4 个缺陷（否则上面这些根本查不出来）：
+只取第一个 compatible、续行顶格时正则贪婪吞掉整个分支、
+「节点存在但无 status」被误判为 okay、以及未处理 `pcie3x4` 这类插槽位。
 
 ### 为什么 dtc 完整编译未验证
 
@@ -380,7 +475,7 @@ H88K 依赖 `rk3588-hinlink.dtsi`（immortalwrt 6.18 内核中没有），它又
 | coolsnowwolf/lede | `gpio0 RK_PA1` | `GPIO_ACTIVE_HIGH` |
 
 引脚与极性都不同，lede 那份会导致**背光不亮或反向**。
-本方案 6 份 H29K DTS 全部采用厂商原值 `PA0 / ACTIVE_LOW`。
+本方案 3 份 H29K DTS 全部采用厂商原值 `PA0 / ACTIVE_LOW`。
 
 lede 那份还是**混合体**：有红外接收（v5 特征）但无电池 ADC（v1.3 特征），
 且 panel 完全没有 width/height/rotate 配置 —— 更像厂商某个中间版本。
@@ -388,13 +483,15 @@ lede 那份还是**混合体**：有红外接收（v5 特征）但无电池 ADC�
 
 ### 需实机确认
 
-1. **1.9 寸屏是「微雪原厂」还是「线序修正版」** ——
-   厂商 DTS 注释里存在两段 1.9 配置，`spi-max-frequency` 差 16 倍
-   （`10000000` vs `600000`），刷错会花屏。
-2. **2.8 寸与 1.49 寸屏用哪份 fbtft 偏移 patch** —— 厂商只给了 1.9 与 1.14 两份。
-3. **老机器 a-b 的 PHY 复位是否稳定** —— `pull_none` 依赖外部电路定电平。
-4. **各机型 LED 颜色与闪烁规则**。
-5. **H29K v5 的 5G 模组电源** —— 抄 iStoreOS 的 GPIO0_PC0 + 2s 启动延时。
+1. **H89K 屏显示是否偏移** —— 上游用 `x-offset=40 / y-offset=52`，
+   需确认本仓库的 fbtft 1.14 寸 patch 在 H89K 上是否同样生效。
+2. **H28K 的 eth1 枚举** —— 补上 `pcie-eth` 后需实机确认 RTL8111HS 能正常识别。
+3. **H29K / HT2 是否真的只有 1 个网口** —— DTS 与上游一致，但厂商 DTS 里
+   是否有未声明的 PCIe 网卡，需插上网线看 `ls /sys/class/net/`。
+4. **老机器 a-b 的 PHY 复位是否稳定** —— `pull_none` 依赖外部电路定电平。
+5. **各机型 LED 颜色与闪烁规则**。
+6. **1.49 寸屏用哪份 fbtft 偏移 patch** —— 厂商只给了 1.9 与 1.14 两份，1.49 未提供。
+7. **H29K v5 的 5G 模组电源** —— 抄 iStoreOS 的 GPIO0_PC0 + 2s 启动延时。
 
 取证命令：
 
@@ -402,7 +499,7 @@ lede 那份还是**混合体**：有红外接收（v5 特征）但无电池 ADC�
 ls /sys/class/net/                                  # 实际几个 ethN
 for p in /sys/class/net/eth*; do ethtool -i $p | grep -E "driver|bus-info"; done
 find /sys/bus/mdio_bus/devices/ -name phy_id -exec sh -c 'echo "$1 => $(cat "$1")"' _ {} \;
-dmesg | grep -iE "gmac|ethernet|phy|combphy|saradc"
+dmesg | grep -iE "gmac|ethernet|phy|combphy|saradc|pcie"
 ```
 
 ---
@@ -413,10 +510,22 @@ dmesg | grep -iE "gmac|ethernet|phy|combphy|saradc"
 |---|---|
 | `tools/check_port_count.py` | **口数自检**：交叉校验 DTS 网口构成与 `02_network` 映射 |
 | `tools/dts_syntax_check.py` | 离线 DTS 结构校验（括号平衡、include 完整性） |
+| `tools/fdtdump.py` | **DTB 反解析**：把厂商 dtb 的节点/属性 dump 成可读文本，查证硬件参数 |
 | `tools/gen_hinlink.py` | RK3568 机型 DTS 生成器 |
 | `tools/gen_hinlink_35xx.py` | RK3528 / RK3588 机型 DTS 生成器 |
 
 生成器是 DTS 的可读来源；直接改 DTS 也可以，但改完请跑校验脚本。
+
+### 使用 fdtdump.py 查证硬件参数
+
+厂商 dtb 是本方案唯一的参数来源。`fdtdump.py` 无需 dtc，纯 Python 解析 FDT：
+
+```sh
+python3 tools/fdtdump.py vendor-h89k.dtb spi@fecb0000   # 按路径过滤
+```
+
+典型用途：确认某个 GPIO 到底是哪一 bank's 哪一位、某个 regulator 挂在哪路电源上。
+本轮用它纠正了 README 里 `dc-gpios` 从 `GPIO1_D4` 误记为 **`GPIO1_A4`** 的错误。
 
 ### 使用 check_port_count.py 时注意
 
@@ -428,27 +537,53 @@ pcie3x1 / pcie3x2 在 DTS 里通常没有显式节点，
 只扫 DTS 会把四网口机误判成两网口。
 ```
 
+但**插槽位要显式剔除**：`pcie3x4` 在 `rk3588-hinlink.dtsi` 里是 okay 的，
+可它在 H88K 上是 PCIe x4 插槽位 / M.2 NVMe 位，不是板载网口 ——
+所以 `EXCLUDE` 表里按机型剔除了它。这正是它能抓出 H88K 四口映射错误的原因。
+
 ---
 
 ## 九、数据来源
 
-所有硬件参数均来自厂商原始固件的 dtb（解包反编译，逐项核对）：
+所有硬件参数均来自厂商原始固件的 dtb（解包反编译，逐项核对），
+并与上游开源 DTS 双向交叉验证：
 
-| 来源 | 提供的机型 |
+| 来源 | 提供的机型 / 信息 |
 |---|---|
 | 2022 厂商固件 ×5（`R22.7.19` / `R22.8.22`） | h68k a-b / c / d-f / c-usb3 |
 | 2023 厂商固件（`R23.4.20`） | h68k-d |
 | 2024 厂商固件（`QWRT-R24.07.07`） | h68k / h69k 硬件定义 |
 | 2025 厂商固件（`H29K-NEW-UI-20251029`） | **h29k v5 1.49 寸触屏版** |
-| 2025 厂商固件（`immortalwrt-v1.2.2-20250608-...h89k`） | **h89k**（此前全网零适配） |
+| 2025 厂商固件（`immortalwrt-v1.2.2-20250608-...h89k`） | **h89k** |
 | H29K 设备树 ×5 + patch ×4（用户提供） | h29k v1.3 / v5 各屏尺寸 |
 | 上游 `coolsnowwolf/lede` | **h66k** / ht2 / h28k / h29k 参考 |
 | 上游 `istoreos/istoreos` | h88k v2 / v3 |
-| 上游 OpenWrt 主线 + Linux 内核 | `rk3568-hinlink-h68k.dts`、`rk3568-hinlink-opc.dtsi` 蓝本 |
+| 上游 `unifreq/linux-6.1.y-rockchip` | **h89k 屏参数交叉验证**、h28k 的 `pcie-eth` 写法、h66k / h68k / h69k 网络构成 |
+| 上游 OpenWrt 主线 + Linux 内核 | `rk3568-hinlink-h68k.dts`、`rk3568-hinlink-opc.dtsi`、`rk3528.dtsi` 蓝本 |
 
 > ⚠️ **compatible 前缀历史上有 5 种**：`ink`（厂商 22-24 年）、`hinlink`、
 > `hlink`、`linkstar`、`rockchip`。本仓库统一用 `hinlink,`，
-> 按单一前缀匹配会漏掉 lede 的 H28K（它用 `hlink,h28k`）。
+> 但 `02_network` 里**同时保留**了 `hlink,` / `linkstar,` 别名分支 ——
+> 因为上游 unifreq 与 lede 的 H28K 用的是 `hlink,h28k`，
+> 刷那些固件时不会被本仓库的映射漏掉。
+
+### 上游还有几个 HinLink 机型未纳入
+
+`unifreq/linux-6.1.y-rockchip` 里还有这些 HinLink 相关 DTS，本轮**只作参考、未适配**，
+因为缺少厂商 dtb 交叉验证（不满足本仓库「参数必须可溯源」的纪律）：
+
+| 文件 | 机型 | 状态 |
+|---|---|---|
+| `rk3568-hlink-ht3.dts` | HT3（NAS，4 盘位 + RTC + 风扇） | 未适配 |
+| `rk3568-hinlink-hnas.dts` | HNAS（同 HT3 硬件，`compatible = "hinlink,hnas"`） | 未适配 |
+| `rk3588-hlink-ac88.dts` | AC88 | 未适配 |
+| `rk3588-hlink-th88.dts` | TH88 | 未适配 |
+| `rk3588-hinlink-h88k-v31.dts` | H88K **V3.1**（`compatible = "hlink,h88k-v31"`） | 未适配 |
+| `rk3566-hlink-netfusion.dts` | 非 RK3568，非本方案范围 | 不适用 |
+
+> `rk3588-hlink-h88k-v31.dts` 值得注意：它是 H88K V3.1，`compatible` 三段式
+> `hlink,h88k-v31` / `hlink,h88k-v3` / `rockchip,rk3588`，与本仓库的
+> `hinlink,h88k-v3` 是不同硬件。若你有 V3.1 的机器，需要单独适配。
 
 ---
 

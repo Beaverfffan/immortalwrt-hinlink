@@ -1,4 +1,21 @@
 // SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * HinLink OPC-H28K (RK3528)
+ *
+ * 网络构成：1×板载 RGMII(gmac1) + 1×PCIe RTL8111HS
+ *
+ * ★ 无板载 WiFi —— 本机不使能 sdio0，target 也不带 kmod-aic8800s。
+ *   RK3528 的 WiFi 走 sdio0；H28K 板上没有 WiFi 模组，故整条 sdio 链路
+ *   （sdio0 控制器 + pwrseq + mmc-pwrseq）一律不声明。
+ *   ⚠️ 上游 unifreq 的 rk3528-hlink-h28k.dts 同样只有 pcie2x1 + i2c3，
+ *      没有任何 sdio/wifi 节点 —— 两侧独立印证「H28K 无 WiFi」。
+ *
+ * ★ PCIe 口是真实的 RTL8111HS，必须显式挂 pcie-eth 子节点：
+ *   上游 rk3528-hlink-h28k.dts 挂在 pcie2x1 下，compatible = "pci10ec,8168"，
+ *   reg = <0x000000 0 0 0 0>（device 0 function 0），realtek,led-data = <0x0870>。
+ *   本 DTS 沿用上游的 pcie-eth 写法 —— RK3528 的 pcie 控制器在 rk3528.dtsi
+ *   里没有内建网卡节点，不显式声明就不会枚举出 eth1。
+ */
 
 /dts-v1/;
 
@@ -8,11 +25,12 @@
 #include "rk3528.dtsi"
 
 / {
-	model = "HINLINK H28K";
-	compatible = "hinlink,h28k", "rockchip,rk3528";
+	model = "HINLINK OPC-H28K Board";
+	compatible = "hinlink,opc-h28k", "hinlink,h28k", "hlink,h28k", "rockchip,rk3528";
 
 	aliases {
 		ethernet0 = &gmac1;
+		ethernet1 = &pcie_eth;
 		mmc0 = &sdhci;
 		mmc1 = &sdmmc;
 		serial0 = &uart0;
@@ -211,12 +229,25 @@
 	};
 };
 
+/* 网口 2/2：PCIe RTL8111HS —— 参数取自上游 rk3528-hlink-h28k.dts */
 &pcie {
 	pinctrl-names = "default";
 	pinctrl-0 = <&rtl8111hs_isolateb_l>;
 	reset-gpios = <&gpio4 RK_PA3 GPIO_ACTIVE_HIGH>;
 	vpcie3v3-supply = <&vcc_3v3>;
 	status = "okay";
+
+	pcie@0,0 {
+		reg = <0x000000 0 0 0 0>;
+		#address-cells = <3>;
+		#size-cells = <2>;
+
+		pcie_eth: pcie-eth@10,0 {
+			compatible = "pci10ec,8168";
+			reg = <0x000000 0 0 0 0>;
+			realtek,led-data = <0x0870>;
+		};
+	};
 };
 
 &pinctrl {

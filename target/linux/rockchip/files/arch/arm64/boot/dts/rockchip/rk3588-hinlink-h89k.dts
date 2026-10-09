@@ -18,12 +18,40 @@
  *   厂商 02_network 映射：LAN "eth0 eth1" / WAN "eth2"
  *         ⇒ 板载 RGMII 作WAN（GMAC 节点显式 label = "eth2"）
  *
- *   显示 = ST7789V 135×240 rot90 @spi@fecb0000
+ *   显示 = ST7789V 135×240 rot90 @spi@fecb0000 (SPI4 m2)
+ *          dc-gpios = GPIO1_A4，屏供电 vcc3v0_lcd (3.0V)
  *   风扇 = pwm3(febf0020)
  *   模组 = 4G/5G 供电（GPIO4_A3）与复位（GPIO4_C6）
  *
  *   ★ SATA：厂商 dtb 里 sata0/1/2 三路**均为 disabled**
  *     （combphy 也未使能），本机不接 SATA 座，故本 DTS 不使能 sata。
+ *
+ *   ★ 屏参数交叉验证（本 DTS 厂商 dtb 实证 ↔ 上游 unifreq PR#19 独立实证）：
+ *     项目          厂商 dtb                      上游 rk3588-hlink-h89k.dts
+ *     compatible    sitronix,st7789v             sitronix,st7789v            ✓
+ *     分辨率        135 × 240(0x87 × 0xf0)        135 × 240                    ✓
+ *     rotate        0x5a = 90                    rotate = <90>                ✓
+ *     buswidth      8                            buswidth = <8>               ✓
+ *     spi-max-freq  1000000 (1 MHz)              1000000                      ✓
+ *     dc-gpios      gpio1 pin4 = GPIO1_A4        <&gpio1 RK_PA4 ACTIVE_HIGH>  ✓
+ *     CS            spi4m2_cs0 (GPIO1_B3)        &spi4m2_cs0                 ✓
+ *     SPI 引脚      GPIO1_B2/C1/D1 (func8)       由 dtsi 提供                  —
+ *     x/y-offset    ★ 厂商 dtb 无此属性          40 / 52                      见下
+ *
+ *     ⇒ 屏驱动型号、分辨率、旋转、总线宽度、频率、DC 脚、CS 六项**双方完全吻合**，
+ *       可确认「上游 PR#19 的 H89K 屏配置可信」。
+ *
+ *   ★ 关于 x-offset=40 / y-offset=52：这是**上游自己加的**，厂商 dtb 里没有。
+ *     它对应 fbtft 的 set_addr_win 偏移补偿 —— ST7789V 135×240 面板在
+ *     rotate=90 后显存窗口需要平移才能对上实际可见区。
+ *     本仓库已有的 `9999-fbtft-adjust-display-offset-for-rotation-h29k-1.14.patch`
+ *     正是同一机制（1.14 寸也是 135×240，偏移量 rot90 时同为 xs+=40, ys+=52），
+ *     两边数值吻合，可交叉印证。
+ *
+ *   ⚠️ 上游 PR#19 的 h89k 文件里 `compatible = "hlink,h88k"` 且
+ *     `model = "Hlink H88K"` —— 明显是从 h88k-v3 复制粘贴后忘了改，
+ *     导致 H89K / H88K / H88K-v3 三者 compatible 完全相同、无法区分。
+ *     本 DTS 使用独立 compatible `hinlink,opc-h89k`，勿沿用上游写法。
  *
  * 枚举顺序（immortalwrt 6.18 dtc 顺序）
  * ------------------------------------
@@ -90,6 +118,17 @@
 		regulator-max-microvolt = <3300000>;
 		vin-supply = <&vcc3v3_modem>;
 		gpio = <&gpio4 RK_PC6 GPIO_ACTIVE_LOW>;
+	};
+
+	/* 屏供电（厂商 dtb 原值 3.0V，always-on） */
+	vcc3v0_lcd: vcc3v0-lcd {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc3v0_lcd";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <3000000>;
+		regulator-max-microvolt = <3000000>;
+		vin-supply = <&vcc_5v0_sys>;
 	};
 };
 
@@ -210,6 +249,12 @@
 			rockchip,pins = <0 RK_PD4 RK_FUNC_GPIO &pcfg_pull_up>;
 		};
 	};
+
+	spi4 {
+		lcd_dc_pin: lcd-dc-pin {
+			rockchip,pins = <1 RK_PA4 RK_FUNC_GPIO &pcfg_pull_down>;
+		};
+	};
 };
 
 /* ============================================================
@@ -222,13 +267,44 @@
 };
 
 /* ============================================================
+ * 屏：ST7789V 135×240 rot90 走 SPI4 m2
+ * 全部为厂商 dtb 原值，并经上游 unifreq PR#19 独立交叉验证
+ * ============================================================ */
+
+&spi4 {
+	assigned-clocks = <&cru CLK_SPI4>;
+	assigned-clock-rates = <200000000>;
+	num-cs = <1>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&spi4m2_pins>, <&spi4m2_cs0>;
+	status = "okay";
+
+	panel@0 {
+		compatible = "sitronix,st7789v";
+		reg = <0>;
+		rotate = <90>;
+		width = <135>;
+		height = <240>;
+		buswidth = <8>;
+		spi-max-frequency = <1000000>;
+		spi-cpol;
+		spi-cpha;
+		dc-gpios = <&gpio1 RK_PA4 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&lcd_dc_pin>;
+		power-supply = <&vcc3v0_lcd>;
+	};
+};
+
+/* ============================================================
  * ★ 未配置项（厂商 dtb 中同样未启用，不擅自添加）
  *
  *   SATA  —— 厂商 dtb 里 sata0/1/2 与 combphy 均 disabled，本机无 SATA 座
- *   屏    —— 厂商 dtb 有 panel（ST7789V 135×240 rot90 @spi@fecb0000，
- *            dc-gpios = GPIO1_D4，spi-max-frequency = 1 MHz），
- *            需 fbtft 屏驱动配置，见 README 待确认项
  *   RTC   —— 厂商 dtb 有 hym8563-int 引脚（GPIO0_B2）但无 rtc 节点
  *   红外  —— 厂商 dtb 有 ir-int-pin（GPIO0_D4）引脚定义，
  *            但未见 gpio-ir-receiver 节点，故本 DTS 不使能
+ *
+ * ★ 屏的显示偏移：需配合 fbtft 偏移补偿 patch 使用，见文件头注释。
+ *   厂商 dtb 的 panel 节点**没有** x-offset/y-offset 属性，
+ *   偏移由内核 fbtft 驱动侧硬编码（对应本仓库 patches/ 下 1.14 寸那份）。
  * ============================================================ */

@@ -1,4 +1,17 @@
 // SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * HinLink H29K —— v5 主板 + 1.49 寸电容触屏版（172x320 GC9307 + AXS5106）
+ *
+ * ★ 网络：**单网口** —— 只有板载 RGMII(gmac1)，无 PCIe 网卡节点。
+ *   ⇒ board.d/02_network 对本机只映射 eth0。
+ *
+ * ★ 这是唯一有「真电容触控」的 H29K 变体：
+ *   - 屏驱动 sitronix,gc9307（其余 H29K 都是 st7789v）
+ *   - 触控 chipone,axs5106 @ I2C1 (0x63)，irq=GPIO4_B2，reset=GPIO4_B3
+ *   - 背光从 GPIO 恒亮改成 pwm-backlight（pwm3 / GPIO4_B6，256 级）
+ *   参数全部来自厂商 H29K-NEW-UI-20251029 固件解出的 dtb
+ *   （已归档为 vendor-h29k-v5-1.49.dtb）。
+ */
 
 /dts-v1/;
 #include <dt-bindings/gpio/gpio.h>

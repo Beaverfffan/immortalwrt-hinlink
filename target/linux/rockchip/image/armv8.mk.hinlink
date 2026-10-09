@@ -201,6 +201,8 @@ define Device/hinlink_h28k_rk3528
   DEVICE_ALT0_MODEL := H28K
   DEVICE_DTS := rk3528-hinlink-h28k
   UBOOT_DEVICE_NAME := hinlink-h28k-rk3528
+  # ★ H28K 无板载 WiFi：RK3528 的 WiFi 走 sdio0，本机不使能，
+  #   故不挂 kmod-aic8800s / kmod-r8169 之外的任何无线驱动。
   DEVICE_PACKAGES := kmod-r8169
 endef
 TARGET_DEVICES += hinlink_h28k_rk3528
@@ -210,24 +212,24 @@ TARGET_DEVICES += hinlink_h28k_rk3528
 # 用户明确要求：v1.3 与 v5 分开 target，且每种屏幕大小独立机型，不做自适应。
 # 命名规则：h29k + 主板版本 + 屏幕大小
 #
-# ---- v1.3 目标（TARGET_H29K_V13）----
+# ★ 屏幕尺寸只保留两种：**1.14 寸** 与 **1.49 寸**。
+#   厂商的 1.9 寸（170x320）与 2.8 寸（240x320）变体已按需求移除，
+#   对应 DTS / target / 02_network 条目一并删除。
+#
+# ---- v1.3 目标----
 #   硬件特征：无电池电压ADC、无红外接收、模组有 power-gpios(gpio4_B5)、无 &uart2
-#   屏幕驱动：ST7789V（1.9" / 1.14"）
-#   内核 patch：1.9" 与 1.14" 各需不同 fbtft 偏移
+#   屏幕驱动：ST7789V 1.14"
 #
-#   机型 compatible         屏幕          板级屏参数
+#   机型compatible         屏幕          板级屏参数
 #   h29k-v1.3-1.14hinlink,h29k-v1.3-114 135x240 rot270
-#   h29k-v1.3-1.9           hinlink,h29k-v1.3     170x320 rot270
 #
-# ---- v5 目标（TARGET_H29K_V5）----
+# ---- v5 目标----
 #   硬件特征：有电池电压ADC(saradc ch1)、有红外(gpio4_PC6)、有 &uart2、模组无 power-gpios
-#   屏幕驱动：1.9"/1.14"/2.8" 为 ST7789V；1.49" 触屏版为 GC9307 + AXS5106 + PWM 背光
+#   屏幕驱动：1.14" 为 ST7789V；1.49" 触屏版为 GC9307 + AXS5106 + PWM 背光
 #
 #   机型                compatible               屏幕         板级屏参数
 #   h29k-v5-1.14  hinlink,h29k-v5-114  135x240 rot90
 #   h29k-v5-1.49  hinlink,h29k-v5-149  172x320 rot270  GC9307 + AXS5106 + pwm3 背光
-#   h29k-v5-1.9   hinlink,h29k-v5      170x320 rot270
-#   h29k-v5-2.8   hinlink,h29k-v5-28   240x320 rot270
 
 # --- v1.3 目标 ---
 
@@ -241,13 +243,6 @@ define Device/hinlink_h29k-v1.3-1.14_rk3528
 endef
 TARGET_DEVICES += hinlink_h29k-v1.3-1.14_rk3528
 
-define Device/hinlink_h29k-v1.3-1.9_rk3528
-  $(Device/hinlink_h29k-v1.3-1.14_rk3528)
-  DEVICE_MODEL := H29K v1.3 (1.9 inch)
-  DEVICE_DTS := rk3528-hinlink-h29k-v1.3-1.9
-endef
-TARGET_DEVICES += hinlink_h29k-v1.3-1.9_rk3528
-
 # --- v5 目标 ---
 
 define Device/hinlink_h29k-v5-1.14_rk3528
@@ -260,20 +255,6 @@ define Device/hinlink_h29k-v5-1.14_rk3528
                      kmod-iio-adc-rk3528 kmod-power-supply
 endef
 TARGET_DEVICES += hinlink_h29k-v5-1.14_rk3528
-
-define Device/hinlink_h29k-v5-1.9_rk3528
-  $(Device/hinlink_h29k-v5-1.14_rk3528)
-  DEVICE_MODEL := H29K v5 (1.9 inch)
-  DEVICE_DTS := rk3528-hinlink-h29k-v5-1.9
-endef
-TARGET_DEVICES += hinlink_h29k-v5-1.9_rk3528
-
-define Device/hinlink_h29k-v5-2.8_rk3528
-  $(Device/hinlink_h29k-v5-1.14_rk3528)
-  DEVICE_MODEL := H29K v5 (2.8 inch)
-  DEVICE_DTS := rk3528-hinlink-h29k-v5-2.8
-endef
-TARGET_DEVICES += hinlink_h29k-v5-2.8_rk3528
 
 # 1.49 寸电容触屏版：GC9307 屏 + AXS5106 触控 + PWM 背光
 define Device/hinlink_h29k-v5-1.49_rk3528
@@ -313,6 +294,9 @@ TARGET_DEVICES += hinlink_opc-ht2_rk3528
 # ★ 不含 SATA —— 厂商 dtb 里 sata0/1/2 三路均为 disabled
 # ★ 不含板载 WiFi（用 M.2）
 #   5G 模组：4G/5G 供电 GPIO4_A3 + 复位 GPIO4_C6
+#   屏：ST7789V 135x240 rot90 @SPI4 m2（厂商 dtb + 上游 unifreq PR#19 双重实证）
+#     —— kmod-fb-tft-st7789v 提供驱动，显示偏移靠 patches/ 下 1.14 寸那份
+#        （同为 135x240，rot90 偏移量 xs+=40 ys+=52 与上游 PR 标注一致）
 
 define Device/hinlink_opc-h89k_rk3588
   $(Device/rk3588)
@@ -321,7 +305,8 @@ define Device/hinlink_opc-h89k_rk3588
   DEVICE_DTS := rk3588-hinlink-h89k
   UBOOT_DEVICE_NAME := generic-rk3588
   DEVICE_PACKAGES := kmod-r8169 kmod-mt7921e wpad-basic-mbedtls \
-                     kmod-hwmon-pwmfan kmod-usb-serial-option
+                     kmod-hwmon-pwmfan kmod-usb-serial-option \
+                     kmod-fb-tft-st7789v
 endef
 TARGET_DEVICES += hinlink_opc-h89k_rk3588
 

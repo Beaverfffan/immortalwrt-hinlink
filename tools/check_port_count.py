@@ -30,6 +30,7 @@ DTSI = os.path.join(DTS, 'rk3568-hinlink-opc.dtsi')
 
 # 期望口数（人工确认的硬件事实）。改 DTS 时必须同步改这里。
 EXPECT = {
+    # ---- RK3568 ----
     'rk3568-hinlink-h66k':        2,  # 无板载 GMAC，2xRTL8125（PCIe 枚举）
     'rk3568-hinlink-h68k-a':      2,  # 2022 双千兆，2xGMAC，无 PCIe
     'rk3568-hinlink-h68k-a-usb':  2,
@@ -41,37 +42,95 @@ EXPECT = {
     'rk3568-hinlink-h68k-new':    4,
     'rk3568-hinlink-h69k-3eth':   3,  # 屏蔽 gmac1 -> 1xGMAC + 2xRTL8125
     'rk3568-hinlink-h69k-mini':   4,  # = H68K max，2xGMAC + 2xRTL8125
+    # ---- RK3528 ----
+    'rk3528-hinlink-h28k':        2,  # RGMII(gmac1) + PCIe RTL8111HS，无 WiFi
+    # H29K 全系与 HT2 都是**单网口**：DTS 只声明 gmac1，无 PCIe 网卡节点。
+    # 厂商 DTS 与上游 unifreq rk3528-hlink-h29k.dts 均为 aliases 只含
+    # ethernet0 = &gmac1，两侧一致。
+    'rk3528-hinlink-h29k-v1.3-1.14': 1,
+    'rk3528-hinlink-h29k-v5-1.14':   1,
+    'rk3528-hinlink-h29k-v5-1.49':   1,
+    'rk3528-hinlink-h29k':        1,  # lede 参考版（无设备定义，仅校验不崩溃）
+    'rk3528-hinlink-ht2':         1,
+    # ---- RK3588 ----
+    # H88K v2/v3 的板载网口都是 gmac0 + pcie2x1l1 = 2 口；
+    # pcie3x4 是 PCIe x4 插槽位（v3 上跑 M.2 NVMe），不算板载网口。
+    # v3 额外在 pcie2x1l2 挂了第三颗 RTL8125 ⇒ 3 口。
+    'rk3588-hinlink-h88k-v2':     2,
+    'rk3588-hinlink-h88k-v3':     3,
     'rk3588-hinlink-h89k':        3,  # 1xGMAC + 2xRTL8125，屏蔽 gmac1
 }
 
 # 只读这些节点
-# 各 SoC 的网口控制器 label（RK3568 与 RK3588 命名不同）
+# 各 SoC 的网口控制器 label（RK3568 / RK3528 / RK3588 命名不同）
 PORTS = {
     'rk3568': ('gmac0', 'gmac1', 'pcie3x1', 'pcie3x2'),
-    'rk3588': ('gmac0', 'gmac1', 'pcie2x1l1', 'pcie2x1l2'),
+    'rk3528': ('gmac1', 'pcie'),
+    # H88K 的两路 2.5G 挂在 pcie3x4(rtl8125) 与 pcie2x1l1(rtl8125)，
+    # 由 rk3588-hinlink.dtsi 使能；pcie2x1l0 是 WiFi 不算网口。
+    # H89K 则改用 pcie2x1l1 / pcie2x1l2。
+    'rk3588': ('gmac0', 'gmac1', 'pcie2x1l1', 'pcie2x1l2', 'pcie3x4'),
+}
+
+# 各 SoC 用哪个 dtsi 作基线。RK3528 用内核自带 rk3528.dtsi（本仓库没有），
+# 且该文件里 gmac0/gmac1 都是 status="disabled"，故传 None 走纯 DTS 判定。
+DTSI_FOR = {
+    'rk3568': 'rk3568-hinlink-opc.dtsi',
+    'rk3528': None,
+    'rk3588': 'rk3588-hinlink.dtsi',
 }
 
 
 def node_status(text, node):
-    """返回 DTS/DTSI 中某节点的 status；节点不存在返回 None。"""
+    """返回 DTS/DTSI 中某节点的 status；节点不存在返回 None。
+
+    ★ 没有 status 属性时返回 None（未知），**不能**默认当成 okay：
+      RK3528 内核 rk3528.dtsi 里 gmac0/gmac1 都是 status = "disabled"，
+      若把「未写 status」误判为 okay，H28K 会被算成 3 口（凭空多一个 gmac0）。
+    """
     m = re.search(r'(?:^|\n)&?' + re.escape(node) + r' \{(.*?)\n\t\};',
                   text, re.S)
     if not m:
         return None
     s = re.search(r'status = "(\w+)"', m.group(1))
-    return s.group(1) if s else 'okay'      # 未显式写 status 视为 okay
+    # 节点存在但没写 status：按 SoC dtsi 的惯例视为未启用（disabled）
+    return s.group(1) if s else 'disabled'
 
 
-def dts_ports(dts, dtsi, soc='rk3568'):
-    """口数 = okay 的 GMAC + okay 的 PCIe 控制器。DTS 覆盖 dtsi。"""
+def dts_ports(dts, dtsi, soc='rk3568', exclude=()):
+    """口数 = okay 的 GMAC + okay 的 PCIe 控制器。DTS 覆盖 dtsi。
+
+    exclude：需要从统计中剔除的控制器名。
+      用于「同一 SoC 上某个 PCIe 控制器在本机型上不是网口」的情况 ——
+      例如 H89K 沿用 rk3588-hinlink.dtsi 基线时 pcie3x4 是 WiFi/SSD 位，
+      而 H88K 上它才是 RTL8125。
+    """
     n = 0
     for node in PORTS[soc]:
+        if node in exclude:
+            continue
         st = node_status(dts, node)
-        if st is None:
+        if st is None and dtsi:
             st = node_status(dtsi, node)
         if st == 'okay':
             n += 1
     return n
+
+
+# 按机型剔除的控制器（基线 dtsi 使能了，但本机型上不是**板载**网口）
+EXCLUDE = {
+    # H89K：pcie3x4 在 dtsi 里是 WiFi/SSD 位，H89K 的两路 2.5G 走
+    # pcie2x1l1 / pcie2x1l2。不剔除会被算成 4 口。
+    'rk3588-hinlink-h89k': ('pcie3x4',),
+    # H88K v2：pcie3x4 是 **PCIe x4 插槽位**（上游 dtsi 注释：
+    #   "H88K v1 & v2: pcie x4 slot"），用来插扩展网卡 / NVMe，
+    #   不是板载网口。板载只有 gmac0 + pcie2x1l1 = 2 口。
+    'rk3588-hinlink-h88k-v2': ('pcie3x4',),
+    # H88K v3：同样剔除 pcie3x4（v3 上改跑 M.2 NVMe）；
+    # 另外 gmac1 在 rk3588.dtsi 里默认 okay，但 H88K 只有 gmac0 板载 RGMII，
+    # 不剔除会被算成 4 口。板载 = gmac0 + pcie2x1l1 + pcie2x1l2 = 3 口。
+    'rk3588-hinlink-h88k-v3': ('pcie3x4', 'gmac1'),
+}
 
 
 def parse_net(path):
@@ -88,21 +147,69 @@ def parse_net(path):
     """
     text = io.open(path, encoding='utf-8').read()
     cases = {}
-    # 反斜杠续行：'|' 后紧跟 '\' + 换行 + 缩进 + 下一个标签
-    cont = r'(?:\|\\\r?\n[\t ]*[a-z0-9][a-z0-9,\-]*)*'
-    pat = re.compile(
-        r'((?:^|\n)[a-z0-9][a-z0-9,\-]*' + cont + r'\))'
-        r'[\t ]*\r?\n[\t ]*ucidef_set_interfaces_lan_wan \'([^\']*)\' \'([^\']*)\'',
-        re.M)
-    for m in pat.finditer(text):
-        # 首项会带上匹配起始的换行符，续行会带上续行的反斜杠，统一清洗
-        labels = [x.strip().strip('\\').strip() for x in m.group(1)[:-1].split('|')]
-        lan = [x for x in m.group(2).split() if x]
-        wan = [x for x in m.group(3).split() if x]
+
+    # 逐行扫出所有 case 标签，再在每个分支内部找 ucidef。
+    #
+    # 为什么逐行而不是一条大正则：
+    #  1) case 体里允许夹注释、夹别的命令（MAC 生成段就只做 MAC）；
+    #  2) 续行缩进有两种 —— 接口映射段是 TAB，MAC 段是顶格；
+    #  3) 用贪婪正则匹配「标签 + 续行」时会把**上一段**的收尾行
+    #     连同一大串标签吞进同一个 group，导致前面的分支整个消失。
+    #     逐行累积不会有这个问题。
+    lines = text.splitlines()
+    # 标签行的形态：兼容串本体，可带结尾 ')'（单标签）或 '|\'（续行）
+    label_re = re.compile(r'^[a-z0-9][a-z0-9,\-]*(\)|\|\\?)?$')
+    # marks[i] = (起止行号, [该分支的 compatible 列表])
+    marks = []
+    i = 0
+    n = len(lines)
+    while i < n:
+        ln = lines[i].strip()
+        if not label_re.match(ln):
+            i += 1
+            continue
+        # 收集本分支的标签（含 | 续行）
+        labels = []
+        cur = ln
+        while True:
+            if cur.endswith('|\\') or cur.endswith('|'):
+                labels.append(cur[:-2].strip() if cur.endswith('|\\') else cur[:-1].strip())
+                i += 1
+                if i >= n:
+                    break
+                cur = lines[i].strip()
+                continue
+            if cur.endswith(')'):
+                labels.append(cur[:-1].strip())
+                break
+            # 不是合法 case 标签 —— 放弃这一段
+            labels = []
+            break
+        if labels:
+            marks.append((i, labels))
+        i += 1
+
+    # marks[i] 的分支体 = 第 marks[i][0]+1 行 .. 第 marks[i+1][0] 行
+    for k, (endline, labels) in enumerate(marks):
+        startline = endline + 1
+        stopline = marks[k + 1][0] if k + 1 < len(marks) else n
+        chunk = '\n'.join(lines[startline:stopline])
+        u = re.search(r'ucidef_set_interfaces_lan_wan \'([^\']*)\'(?: \'([^\']*)\')?',
+                      chunk)
+        if not u:
+            # 该分支没有接口映射（如 MAC 生成段）。不丢弃标签 ——
+            # 同一个 compatible 可能在这个 case 里只做 MAC，
+            # 在另一个 case 里才做接口映射。先占位，后续分支再填。
+            for cp in labels:
+                if cp and cp not in cases:
+                    cases[cp] = None
+            continue
+        lan = [x for x in u.group(1).split() if x]
+        wan = [x for x in (u.group(2) or '').split() if x]
         for cp in labels:
-            if cp:
+            if cp and cases.get(cp) is None:
                 cases[cp] = (lan, wan)
-    return cases
+    return {k2: v for k2, v in cases.items() if v is not None}
 
 
 def main():
@@ -111,9 +218,12 @@ def main():
 
     def get_dtsi(soc):
         if soc not in dtsi_cache:
-            p = os.path.join(DTS, 'rk3568-hinlink-opc.dtsi' if soc == 'rk3568'
-                            else 'rk3588-hinlink.dtsi')
-            dtsi_cache[soc] = io.open(p, encoding='utf-8').read()
+            fn = DTSI_FOR.get(soc)
+            if not fn:
+                dtsi_cache[soc] = ''
+            else:
+                p = os.path.join(DTS, fn)
+                dtsi_cache[soc] = io.open(p, encoding='utf-8').read()
         return dtsi_cache[soc]
 
     print('%-40s %7s %6s %8s  %s' % ('DTS', 'DTS口', '期望', '映射数', 'LAN / WAN'))
@@ -128,19 +238,30 @@ def main():
     for fn in files:
         base = os.path.basename(fn)[:-4]
         text = io.open(fn, encoding='utf-8').read()
-        cp = re.search(r'compatible = "([^"]+)"', text)
-        cp = cp.group(1) if cp else '?'
-        soc = 'rk3588' if 'rk3588' in base else 'rk3568'
-        n = dts_ports(text, get_dtsi(soc), soc)
+        m_compat = re.search(r'compatible\s*=\s*((?:"[^"]+"\s*,?\s*)+);', text)
+        m_compat = m_compat.group(1) if m_compat else ''
+        # compatible 可能有多个（厂商前缀 + SoC 兼容串），全部取出
+        # 例：compatible = "hinlink,opc-h28k", "hinlink,h28k", "hlink,h28k", "rockchip,rk3528";
+        # 校验映射时只要**任意一个**能在 02_network 里命中即算通过。
+        cps = [c.strip() for c in re.findall(r'"([^"]+)"', m_compat) if c.strip()]
+        cp = cps[0] if cps else '?'
+        soc = 'rk3528' if 'rk3528' in base else ('rk3588' if 'rk3588' in base else 'rk3568')
+        n = dts_ports(text, get_dtsi(soc), soc, EXCLUDE.get(base, ()))
         exp = EXPECT.get(base, '?')
 
-        if cp in net:
-            lan, wan = net[cp]
+        hit = None
+        for c in cps:
+            if c in net:
+                hit = c
+                break
+
+        if hit:
+            lan, wan = net[hit]
             m = len(lan) + len(wan)
-            mapping = '%s / %s' % (' '.join(lan), ' '.join(wan))
+            mapping = '%s / %s  [%s]' % (' '.join(lan), ' '.join(wan), hit)
         else:
             m = None
-            mapping = '(02_network 无此 compatible)'
+            mapping = '(02_network 无此 compatible: %s)' % ', '.join(cps)
 
         ok = True
         if exp != '?':

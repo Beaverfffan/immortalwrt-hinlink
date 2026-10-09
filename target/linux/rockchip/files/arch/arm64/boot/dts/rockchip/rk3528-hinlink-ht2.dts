@@ -6,7 +6,9 @@
  * 仅追加头部说明，**未改动任何硬件配置**。
  *
  * 硬件要点（来自 lede 源码）：
- *   - 板载 RGMII 网口（gmac1）
+ *   - 板载 RGMII 网口（gmac1）—— ★ **单网口**，本 DTS 无 PCIe 网卡节点，
+ *     枚举结果只有 eth0，故 board.d/02_network 只映射 eth0。
+ *     （与 H29K 同样为单口；H28K 才是双口：RGMII + PCIe RTL8111HS）
  *   - 板载 SDIO WiFi：复位 GPIO1_A6 低有效，host-wake GPIO1_A7
  *     ※ 与 H29K 的差异：SDIO 最高速率为 SDR50（H29K 是 SDR104）
  *   - 琥珀色 LAN 灯（gpio4 PC0）+ 绿色工作灯（gpio4 PB7）

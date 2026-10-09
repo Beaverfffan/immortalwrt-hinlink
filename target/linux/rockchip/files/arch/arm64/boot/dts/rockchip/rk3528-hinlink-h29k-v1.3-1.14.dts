@@ -1,4 +1,15 @@
 // SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * HinLink H29K —— v1.3 主板 + 1.14 寸屏（135x240 rot270）
+ *
+ * ★ 网络：**单网口** —— 只有板载 RGMII(gmac1)。
+ *   本 DTS 不含任何 PCIe 网卡节点，因此枚举结果只有 eth0。
+ *   厂商 DTS 与上游 unifreq rk3528-hlink-h29k.dts 同样是单口
+ *   （aliases 里只有 ethernet0 = &gmac1），两侧一致。
+ *   ⇒ board.d/02_network 对本机只映射 eth0，不设独立 WAN。
+ *
+ * ★ 屏幕尺寸只保留 1.14" 与 1.49" 两种；厂商的 1.9" / 2.8" 变体已移除。
+ */
 
 /dts-v1/;
 #include <dt-bindings/gpio/gpio.h>

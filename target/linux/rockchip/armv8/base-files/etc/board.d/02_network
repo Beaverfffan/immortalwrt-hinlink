@@ -12,6 +12,9 @@
 #   hinlink,opc-h69k              装 USB 5G 模组的真 69K，**三网口**
 #   hinlink,opc-h69k-mini         **四网口**（= H68K max），不涉及 SATA/USB3 复用
 #
+# ★ H28K：板载 RGMII(eth0) + PCIe RTL8111HS(eth1)，**无 WiFi**
+# ★ H29K：屏幕只保留 1.14 寸与 1.49 寸两种变体（1.9 / 2.8 已移除）
+#
 # ★ SATA 变体（仅 2022-2023 老机器 a-b / c / d）：
 #   后缀 -sata，combphy0 让给 SATA，USB3.0 不可用。网口映射与基础版相同。
 #
@@ -99,8 +102,13 @@ hinlink,opc-h66k)
 
 
 # ---- H28K：RK3528，双口 ----
+# eth0 = 板载 RGMII(gmac1)，eth1 = PCIe RTL8111HS
+# ⚠️ H28K 无板载 WiFi。
 
-hinlink,h28k)
+hinlink,opc-h28k|\
+	hinlink,h28k|\
+	hlink,h28k|\
+	linkstar,h28k)
 		ucidef_set_interfaces_lan_wan 'eth0' 'eth1'
 		;;
 
@@ -124,15 +132,14 @@ hinlink,opc-h69k|\
 hinlink,opc-h69k-mini|\
 hinlink,h68k|\
 hinlink,opc-h66k|\
+hinlink,opc-h28k|\
 hinlink,h28k|\
+hlink,h28k|\
 linkstar,h28k|\
 hinlink,opc-h29k|\
-hinlink,h29k-v1.3|\
 hinlink,h29k-v1.3-114|\
-hinlink,h29k-v5|\
 hinlink,h29k-v5-114|\
-hinlink,h29k-v5-1.49|\
-hinlink,h29k-v5-28)
+hinlink,h29k-v5-149)
 		wan_mac=$(macaddr_generate_from_mmc_cid mmcblk0)
 		lan_mac=$(macaddr_add "$wan_mac" 1)
 		;;
@@ -140,41 +147,41 @@ esac
 
 # ---- RK3528 机型 ----
 
-hinlink,opc-h28k|\
-	linkstar,h28k)
-		# H28K：PCIe RTL8111HS 为eth0，板载 RGMII 为 eth1
-		ucidef_set_interfaces_lan_wan 'eth0' 'eth1'
-		;;
-
 hinlink,opc-h29k|\
-	hinlink,h29k-v1.3|\
 	hinlink,h29k-v1.3-114|\
-	hinlink,h29k-v5|\
 	hinlink,h29k-v5-114|\
-	hinlink,h29k-v5-1.49|\
-	hinlink,h29k-v5-28)
-		# H29K 全系（含 v1.3 / v5 各屏）：板载 RGMII 为 eth0（aliases ethernet0=&gmac1），PCIe 为 eth1
-		ucidef_set_interfaces_lan_wan 'eth1' 'eth0'
+	hinlink,h29k-v5-149)
+		# H29K 全系（v1.3 / v5，仅 1.14" 与 1.49" 两种屏）：**单网口**
+		# 只有板载 RGMII(gmac1)，DTS 无 PCIe 网卡节点 ⇒ 不会有 eth1。
+		# 厂商 DTS 与上游 unifreq rk3528-hlink-h29k.dts 均为单口（ethernet0=&gmac1）。
+		ucidef_set_interfaces_lan_wan 'eth0'
 		;;
 
 hinlink,opc-ht2)
-		# HT2：板载 RGMII 为 eth0，PCIe 为 eth1
-		ucidef_set_interfaces_lan_wan 'eth0' 'eth1'
+		# HT2：**单网口** —— 同 H29K，只有板载 RGMII(gmac1)
+		ucidef_set_interfaces_lan_wan 'eth0'
 		;;
 
 # ---- RK3588 机型 ----
 
-hinlink,h88k-v2|\
-	hinlink,h88k-v3|\
-hinlink,opc-h89k)
-		# H88K：1×RGMII + 2×PCIe，WAN 走 RGMII
-		ucidef_set_interfaces_lan_wan 'eth1 eth2 eth3' 'eth0'
+hinlink,h88k-v2)
+		# H88K v2：**两网口** —— 板载 gmac0(eth0) + pcie2x1l1 挂的 RTL8125(eth1)
+		# ⚠️ pcie3x4 是 PCIe x4 **插槽位**（上游 dtsi 注释 "H88K v1 & v2: pcie x4 slot"），
+		#    用来插扩展网卡 / NVMe，不是板载网口。
+		ucidef_set_interfaces_lan_wan 'eth1' 'eth0'
 		;;
 
-# ---- H89K：RK3588，1×GMAC + 2×RTL8125 = 3 口----
+hinlink,h88k-v3)
+		# H88K v3：**三网口** —— v2 的两口 + pcie2x1l2 第三颗 RTL8125
+		# （v3 上 pcie3x4 改跑 M.2 NVMe）
+		ucidef_set_interfaces_lan_wan 'eth1 eth2' 'eth0'
+		;;
+
+# ---- H89K：RK3588，1×GMAC + 2×RTL8125 = 三口----
 # 厂商固件 02_network 原值：ucidef_set_interfaces_lan_wan "eth0 eth1" "eth2"
 # eth0 = GMAC(板载 RGMII)，eth1/eth2 = 两路 PCIe RTL8125
 # 厂商把 GMAC 标为 WAN（GMAC 节点显式 label = "eth2"）
+# ⚠️ H89K 绝不能并入上面的 h88k 分支 —— 那样会被套用四口映射。
 
 hinlink,opc-h89k)
 		ucidef_set_interfaces_lan_wan 'eth0 eth1' 'eth2'
