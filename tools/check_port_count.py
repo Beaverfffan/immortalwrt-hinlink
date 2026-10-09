@@ -30,16 +30,17 @@ DTSI = os.path.join(DTS, 'rk3568-hinlink-opc.dtsi')
 
 # 期望口数（人工确认的硬件事实）。改 DTS 时必须同步改这里。
 EXPECT = {
-    'rk3568-hinlink-h68k-a':      2,   # 2022 双千兆，2xGMAC，无 PCIe
-    'rk3568-hinlink-h68k-a-sata': 2,
-    'rk3568-hinlink-h68k-c':      4,   # 2xGMAC + 2xRTL8125
-    'rk3568-hinlink-h68k-c-sata': 4,
+    'rk3568-hinlink-h66k':        2,  # 无板载 GMAC，2xRTL8125（PCIe 枚举）
+    'rk3568-hinlink-h68k-a':      2,  # 2022 双千兆，2xGMAC，无 PCIe
+    'rk3568-hinlink-h68k-a-usb':  2,
+    'rk3568-hinlink-h68k-c':      4,  # 2xGMAC + 2xRTL8125
+    'rk3568-hinlink-h68k-c-usb':  4,
     'rk3568-hinlink-h68k-c-usb3': 4,
     'rk3568-hinlink-h68k-d':      4,
-    'rk3568-hinlink-h68k-d-sata': 4,
+    'rk3568-hinlink-h68k-d-usb':  4,
     'rk3568-hinlink-h68k-new':    4,
-    'rk3568-hinlink-h69k-3eth':   3,   # 屏蔽 gmac1 -> 1xGMAC + 2xRTL8125
-    'rk3568-hinlink-h69k-mini':   4,   # = H68K max，2xGMAC + 2xRTL8125
+    'rk3568-hinlink-h69k-3eth':   3,  # 屏蔽 gmac1 -> 1xGMAC + 2xRTL8125
+    'rk3568-hinlink-h69k-mini':   4,  # = H68K max，2xGMAC + 2xRTL8125
 }
 
 # 只读这些节点

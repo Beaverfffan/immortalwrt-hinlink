@@ -4,8 +4,8 @@ HinLink（芯联）全系列路由器在 immortalwrt 上的设备树与板级配
 **按硬件变体一机一档，不做运行时自适应探测** —— 每个 `compatible` 对应一份独立
 DTS，`02_network` 里 `ethN` 映射写死。
 
-- **20 个机型** · 21 份 DTS · 7 份 dtsi · 4 份内核 patch · 4 个工具脚本
-- 覆盖 RK3568（H68K / H69K）、RK3528（H28K / H29K / HT2）、RK3588（H88K）
+- **21 个机型** · 22 份 DTS · 7 份 dtsi · 4 份内核 patch · 4 个工具脚本
+- 覆盖 RK3568（H66K / H68K / H69K）、RK3528（H28K / H29K / HT2）、RK3588（H88K）
 
 > 本仓库是**支线仓库**，只提供补丁文件，不含完整 OpenWrt 源码。
 > 应用方式见 [`docs/APPLY.md`](docs/APPLY.md)。
@@ -53,20 +53,23 @@ python3 tools/dts_syntax_check.py <dts> <include-dirs...>   # DTS 结构
 
 ## 二、机型矩阵
 
-### RK3568 — H68K / H69K（10 个机型）
+### RK3568 — H66K / H68K / H69K（11 个机型）
 
 | 机型 | 年份/定位 | 口数 | 网络构成 | 板载 WiFi | 存储口 |
 |---|---|---|---|---|---|
-| **h68k-a** | 2022 双千兆 | 2 | 2×GMAC | AP6256 | USB3.0 |
-| h68k-a-sata | 同上 | 2 | 2×GMAC | AP6256 | **SATA** |
-| **h68k-c** | 2022 四网口 | 4 | 2×GMAC + 2×RTL8125 | M.2 | USB3.0 |
-| h68k-c-sata | 同上 | 4 | 2×GMAC + 2×RTL8125 | M.2 | **SATA** |
+| **h66k** | 无板载网口 | 2 | **0×GMAC** + 2×RTL8125 | — | SATA |
+| **h68k-a** | 2022 双千兆 | 2 | 2×GMAC | AP6256 | **SATA** |
+| h68k-a-usb | 同上 | 2 | 2×GMAC | AP6256 | USB3.0 |
+| **h68k-c** | 2022 四网口 | 4 | 2×GMAC + 2×RTL8125 | M.2 | **SATA** |
+| h68k-c-usb | 同上 | 4 | 2×GMAC + 2×RTL8125 | M.2 | USB3.0 |
 | **h68k-c-usb3** | 2022.8 USB3.0 改型 | 4 | 2×GMAC + 2×RTL8125 | M.2 | USB3.0 |
-| **h68k-d** | 2023.4 推荐版 | 4 | 2×GMAC + 2×RTL8125 | M.2 | USB3.0 |
-| h68k-d-sata | 同上 | 4 | 2×GMAC + 2×RTL8125 | M.2 | **SATA** |
+| **h68k-d** | 2023.4 推荐版 | 4 | 2×GMAC + 2×RTL8125 | M.2 | **SATA** |
+| h68k-d-usb | 同上 | 4 | 2×GMAC + 2×RTL8125 | M.2 | USB3.0 |
 | **h68k-new** | 2023末~2024 | 4 | 2×GMAC + 2×RTL8125 | AIC8800 | USB3 + SATA |
 | **h69k** | 装 USB 5G 模组 | **3** | 1×GMAC + 2×RTL8125 | AIC8800 | USB3 + SATA |
 | **h69k-mini** | = **H68K max** | **4** | 2×GMAC + 2×RTL8125 | AIC8800 | USB3 + SATA |
+
+**命名约定**（OpenWrt / lede / iStoreOS 互认）：**无后缀 = SATA，`-usb` = USB3.0**。
 
 ### RK3528 — H28K / H29K / HT2（9 个机型）
 
@@ -87,13 +90,6 @@ python3 tools/dts_syntax_check.py <dts> <include-dirs...>   # DTS 结构
 |---|---|---|---|---|
 | **h88k-v2** | combphy0_ps + SATA | — | 4 | 1×RGMII + 2×PCIe |
 | **h88k-v3** | combphy0_ps + PCIe RTL8125 | SPI ST7789V | 4 | 1×RGMII + 2×PCIe |
-
-### 已知缺口：H66K 尚未提供
-
-`02_network` 里有 `hinlink,h66k` 的映射分支，但**本仓库不含 H66K 的 DTS，
-`armv8.mk.hinlink` 里也没有它的设备定义** —— H66K 只有板级配置没有设备树，
-刷不了固件。需要的话从 lede 的 `rk3568-opc-h66k.dts` 移植（注意它在
-2024 厂商固件里两个 GMAC 都是 disabled，与主线 dtsi 的行为不同）。
 
 ### 关于 lede 的 H29K DTS
 
@@ -117,9 +113,10 @@ RK3568 板（GMAC 为 SoC 内部控制器，枚举固定；PCIe 按扫描顺序�
 
 | 机型 | LAN | WAN |
 |---|---|---|
-| h68k-a / -sata | `eth1` | `eth0` |
-| h68k-c / -sata / c-usb3 | `eth0 eth2 eth3` | `eth1` |
-| h68k-d / -sata / new | `eth1 eth2 eth3` | `eth0` |
+| h66k | `eth1` | `eth0` |
+| h68k-a / -usb | `eth1` | `eth0` |
+| h68k-c / -usb / c-usb3 | `eth0 eth2 eth3` | `eth1` |
+| h68k-d / -usb / new | `eth1 eth2 eth3` | `eth0` |
 | h69k | `eth1 eth2` | `eth0` |
 | h69k-mini | `eth1 eth2 eth3` | `eth0` |
 | h28k | `eth0` | `eth1` |
@@ -169,7 +166,7 @@ USB3.0   同样需要 combphy0 作 PHY_TYPE_USB3
 
 | 范围 | 是否涉及 |
 |---|---|
-| 2022-2023 老机器（h68k 的 a-b / c / d） | ✅ 互斥，拆 `-sata` 变体 |
+| 2022-2023 老机器（h68k 的 a-b / c / d） | ✅ 互斥，拆 `-usb` 变体（无后缀 = SATA） |
 | `h68k-c-usb3` | 本就是 USB3.0 改型，不拆 |
 | 新机 `h68k-new` / `h69k` 系 | ❌ 不涉及，两者可同时使用 |
 
@@ -238,13 +235,14 @@ phy-mode = "rgmii-id"，snps,reset-delays-us = <0 20000 100000>
 ```
 target/linux/rockchip/
 ├── files/arch/arm64/boot/dts/rockchip/
+│   ├── rk3568-hinlink-h66k.dts               无板载网口（2×GMAC disabled）
 │   ├── rk3568-hinlink-h68k-a.dts             ┐
-│   ├── rk3568-hinlink-h68k-a-sata.dts        │
-│   ├── rk3568-hinlink-h68k-c.dts             │ 10 份 RK3568 拆分机型
-│   ├── rk3568-hinlink-h68k-c-sata.dts        │
+│   ├── rk3568-hinlink-h68k-a-usb.dts         │
+│   ├── rk3568-hinlink-h68k-c.dts             │ 11 份 RK3568 拆分机型
+│   ├── rk3568-hinlink-h68k-c-usb.dts         │
 │   ├── rk3568-hinlink-h68k-c-usb3.dts        │
 │   ├── rk3568-hinlink-h68k-d.dts             │
-│   ├── rk3568-hinlink-h68k-d-sata.dts        │
+│   ├── rk3568-hinlink-h68k-d-usb.dts         │
 │   ├── rk3568-hinlink-h68k-new.dts           │
 │   ├── rk3568-hinlink-h69k-3eth.dts          │
 │   ├── rk3568-hinlink-h69k-mini.dts          ┘
@@ -307,8 +305,8 @@ H88K 依赖 `rk3588-hinlink.dtsi`（immortalwrt 6.18 内核中没有），它又
 
 | 项目 | 状态 |
 |---|---|
-| DTS 语法结构（21 份） | ✅ 全部 PASS |
-| 口数与板级映射一致 | ✅ 10/10 RK3568 机型 OK |
+| DTS 语法结构（22 份） | ✅ 全部 PASS |
+| 口数与板级映射一致 | ✅ 11/11 RK3568 机型 OK |
 | 设备定义 ↔ DTS 文件对齐 | ✅ 无孤儿、无缺失 |
 | `compatible` 唯一性 | ✅ 全部唯一 |
 | dtc 完整编译 | ❌ **未验证** |
@@ -395,7 +393,7 @@ pcie3x1 / pcie3x2 在 DTS 里通常没有显式节点，
 | 2024 厂商固件（`QWRT-R24.07.07`） | h68k / h69k 硬件定义 |
 | 2025 厂商固件（`H29K-NEW-UI-20251029`） | **h29k v5 1.49 寸触屏版** |
 | H29K 设备树 ×5 + patch ×4（用户提供） | h29k v1.3 / v5 各屏尺寸 |
-| 上游 `coolsnowwolf/lede` | ht2 / h28k / h29k 参考 |
+| 上游 `coolsnowwolf/lede` | **h66k** / ht2 / h28k / h29k 参考 |
 | 上游 `istoreos/istoreos` | h88k v2 / v3 |
 | 上游 OpenWrt 主线 + Linux 内核 | `rk3568-hinlink-h68k.dts`、`rk3568-hinlink-opc.dtsi` 蓝本 |
 

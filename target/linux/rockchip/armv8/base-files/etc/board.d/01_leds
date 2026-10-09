@@ -13,7 +13,7 @@ case "$board" in
 # 注：SATA 变体 LED 与基础版相同，仅 combphy0 用途不同
 
 hinlink,opc-h68k-a|\
-	hinlink,opc-h68k-a-sata|\
+	hinlink,opc-h68k-a-usb|\
 	linkstar,opc-h68k-a)
 	ucidef_set_led_default "power" "POWER" "green:work" "1"
 	ucidef_set_led_netdev "wan" "WAN" "blue:net" "eth0"
@@ -22,7 +22,7 @@ hinlink,opc-h68k-a|\
 # ---- H68K C/D/F（2022 四网口）----
 
 hinlink,opc-h68k-c|\
-	hinlink,opc-h68k-c-sata|\
+	hinlink,opc-h68k-c-usb|\
 	linkstar,opc-h68k-c)
 	ucidef_set_led_netdev "wan" "WAN" "blue:net" "eth3"
 	ucidef_set_led_ide "disk" "DISK" "yellow:disk"
@@ -37,7 +37,7 @@ hinlink,opc-h68k-c-usb3)
 # ---- H68K D（2023.4 推荐版，WAN = eth0）----
 
 hinlink,opc-h68k-d|\
-	hinlink,opc-h68k-d-sata|\
+	hinlink,opc-h68k-d-usb|\
 	linkstar,opc-h68k-d)
 	ucidef_set_led_netdev "wan" "WAN" "blue:net" "eth0"
 	;;
@@ -64,7 +64,7 @@ hinlink,opc-h69k-mini)
 	;;
 # ---- H66K ----
 
-hinlink,h66k
+hinlink,opc-h66k
 
 	ucidef_set_led_netdev "wan" "WAN" "blue:net" "eth0"
 

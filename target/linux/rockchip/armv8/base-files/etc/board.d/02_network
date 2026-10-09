@@ -28,7 +28,7 @@ case "$board" in
 # ---- H68K A/B：2022 双千兆版，仅 2 个口----
 
 hinlink,opc-h68k-a|\
-	hinlink,opc-h68k-a-sata|\
+	hinlink,opc-h68k-a-usb|\
 	linkstar,opc-h68k-a)
 		ucidef_set_interfaces_lan_wan 'eth1' 'eth0'
 		;;
@@ -37,7 +37,7 @@ hinlink,opc-h68k-a|\
 # ---- H68K C/D/F：2022 四网口版，2×RTL8125 ----
 
 hinlink,opc-h68k-c|\
-	hinlink,opc-h68k-c-sata|\
+	hinlink,opc-h68k-c-usb|\
 	linkstar,opc-h68k-c)
 		ucidef_set_interfaces_lan_wan 'eth0 eth2 eth3' 'eth1'
 		;;
@@ -53,7 +53,7 @@ hinlink,opc-h68k-c-usb3)
 # ---- H68K D：2023.4 推荐版，WAN = eth0（网口全识别）----
 
 hinlink,opc-h68k-d|\
-	hinlink,opc-h68k-d-sata|\
+	hinlink,opc-h68k-d-usb|\
 	linkstar,opc-h68k-d)
 		ucidef_set_interfaces_lan_wan 'eth1 eth2 eth3' 'eth0'
 		;;
@@ -86,10 +86,15 @@ hinlink,opc-h69k-mini)
 		;;
 
 
-# ---- H66K：无板载网口，单口 ----
+# ---- H66K：无板载网口（两个 GMAC 均 disabled）----
+# 厂商 2024 固件 dtb 实证：gmac0(fe2a0000) 与 gmac1(fe010000) 都 disabled，
+# 且无 mdio/phy@0 子节点。lede 把 h66k 归到 nanopi 组（LAN eth1 / WAN eth0），
+# 但那是按 GMAC 存在的前提。H66K 实际只有 PCIe 2.5G 口：
+#   eth0/eth1 = pcie3x1/pcie3x2 枚举出的 RTL8125
+#   因此按「WAN = 第一个 PCIe 口、其余为 LAN」处理。
 
-hinlink,h66k)
-		ucidef_set_interfaces_lan_wan 'eth0' 'eth1'
+hinlink,opc-h66k)
+		ucidef_set_interfaces_lan_wan 'eth1' 'eth0'
 		;;
 
 
@@ -108,17 +113,17 @@ esac
 # 从 eMMC CID 生成稳定的 MAC
 case "$board" in
 hinlink,opc-h68k-a|\
-hinlink,opc-h68k-a-sata|\
+hinlink,opc-h68k-a-usb|\
 hinlink,opc-h68k-c|\
-hinlink,opc-h68k-c-sata|\
+hinlink,opc-h68k-c-usb|\
 hinlink,opc-h68k-c-usb3|\
 hinlink,opc-h68k-d|\
-hinlink,opc-h68k-d-sata|\
+hinlink,opc-h68k-d-usb|\
 hinlink,opc-h68k-new|\
 hinlink,opc-h69k|\
 hinlink,opc-h69k-mini|\
 hinlink,h68k|\
-hinlink,h66k|\
+hinlink,opc-h66k|\
 hinlink,h28k|\
 linkstar,h28k|\
 hinlink,opc-h29k|\
