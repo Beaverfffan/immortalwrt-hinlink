@@ -193,21 +193,13 @@
 			rockchip,pins = <0 RK_PA6 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 
-		sdmmc2m0_bus4: sdmmc2m0-bus4 {
-			rockchip,pins =
-				<3 RK_PC6 RK_FUNC_3 &pcfg_pull_up_drv_level_2>,
-				<3 RK_PC7 RK_FUNC_3 &pcfg_pull_up_drv_level_2>,
-				<3 RK_PD0 RK_FUNC_3 &pcfg_pull_up_drv_level_2>,
-				<3 RK_PD1 RK_FUNC_3 &pcfg_pull_up_drv_level_2>;
-		};
+		/*
+		 * ★ sdmmc2m0_bus4 / _cmd / _clk 的定义**已删除**：
+		 *   内核 rk3568-pinctrl.dtsi 已提供同名标签，内容与我们逐项相同
+		 *   （如 <3 RK_PC6 3 &pcfg_pull_up_drv_level_2>），重定义会报
+		 *   duplicate_label。&sdmmc2 的 pinctrl-0 照常引用内核定义。
+		 */
 
-		sdmmc2m0_cmd: sdmmc2m0-cmd {
-			rockchip,pins = <3 RK_PD2 RK_FUNC_3 &pcfg_pull_up_drv_level_2>;
-		};
-
-		sdmmc2m0_clk: sdmmc2m0-clk {
-			rockchip,pins = <3 RK_PD3 RK_FUNC_3 &pcfg_pull_up_drv_level_2>;
-		};
 	};
 
 	wifi {

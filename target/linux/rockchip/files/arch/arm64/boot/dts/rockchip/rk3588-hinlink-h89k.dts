@@ -238,33 +238,24 @@
  * ============================================================ */
 
 &pinctrl {
-	gmac {
-		gmac0_miim: gmac0-miim {
-			rockchip,pins = <4 RK_PC4 RK_FUNC_GPIO &pcfg_pull_none>,
-					<4 RK_PC5 RK_FUNC_GPIO &pcfg_pull_none>;
-		};
-		gmac0_rgmii_bus: gmac0-rgmii-bus {
-			rockchip,pins = <2 RK_PA6 RK_FUNC_GPIO &pcfg_pull_none>,
-					<2 RK_PA7 RK_FUNC_GPIO &pcfg_pull_none>,
-					<2 RK_PB1 RK_FUNC_GPIO &pcfg_pull_none>,
-					<2 RK_PB2 RK_FUNC_GPIO &pcfg_pull_none>;
-		};
-		gmac0_rgmii_clk: gmac0-rgmii-clk {
-			rockchip,pins = <2 RK_PB0 RK_FUNC_GPIO &pcfg_pull_none>,
-					<2 RK_PB3 RK_FUNC_GPIO &pcfg_pull_none>;
-		};
-		gmac0_tx_bus2: gmac0-tx-bus2 {
-			rockchip,pins = <2 RK_PB6 RK_FUNC_GPIO &pcfg_pull_none>,
-					<2 RK_PB7 RK_FUNC_GPIO &pcfg_pull_none>,
-					<2 RK_PC0 RK_FUNC_GPIO &pcfg_pull_none>;
-		};
-		gmac0_rx_bus2: gmac0-rx-bus2 {
-			rockchip,pins = <2 RK_PC1 RK_FUNC_GPIO &pcfg_pull_none>,
-					<2 RK_PC2 RK_FUNC_GPIO &pcfg_pull_none>,
-					<4 RK_PC2 RK_FUNC_GPIO &pcfg_pull_none>;
-		};
-	};
-
+	/*
+	 * ★ 原 gmac { gmac0_miim / gmac0_rgmii_bus / gmac0_rgmii_clk /
+	 *         gmac0_tx_bus2 / gmac0_rx_bus2 } 整段**已删除**。
+	 *
+	 * 原因（真实编译验证得出）：
+	 *   ① 这 5 个标签内核 rk3588-extra-pinctrl.dtsi 里**已经全有**，
+	 *      重定义会报 duplicate_label：
+	 *        Duplicate label 'gmac0_miim' on /pinctrl/gmac/gmac0-miim
+	 *                                        and /pinctrl/gmac0/gmac0-miim
+	 *   ② 更关键：我们写的 funct 值是 `RK_FUNC_GPIO`(=0，GPIO 功能)，
+	 *      而内核写的是 1（正确的 MDIO/RGMII 功能）：
+	 *        内核 gmac0_miim: <4 RK_PC4 1 &pcfg_pull_none>, <4 RK_PC5 1 ...>
+	 *        我们   gmac0_miim: <4 RK_PC4 RK_FUNC_GPIO ...>, ...
+	 *      funct=0 会让引脚停在 GPIO 功能，MDIO 根本不通。
+	 *
+	 * 引脚号我们与内核一致（4 RK_PC4 / 4 RK_PC5 等），所以直接引用
+	 * 内核的定义即可 —— &gmac0 的 pinctrl-0 不变。
+	 */
 	led {
 		led_work_en: led-work-en {
 			rockchip,pins = <0 RK_PA0 RK_FUNC_GPIO &pcfg_pull_none>;

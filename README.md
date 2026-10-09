@@ -580,6 +580,44 @@ patch -p1 --dry-run < <仓库>/patches/9999-fbtft-read-display-offset-from-dt.pa
 > 语法校验用真实内核 6.18 的 include 树跑的：
 > `python3 tools/dts_syntax_check.py <dts> <hinlink目录> <kernel>/include <kernel>/include/dt-bindings/input <kernel>/arch/arm64/boot/dts <kernel>/arch/arm64/boot/dts/rockchip`
 
+### ★ 已在真实 immortalwrt master 树上完整编译验证（2026-10-09）
+
+**验证方式**：在 Ubuntu 构建机克隆官方 `immortalwrt/immortalwrt` master
+（commit 305089f，rockchip `KERNEL_PATCHVER=6.18`），打入本适配层后
+用 **OpenWrt 自己的 cpp + dtc 命令**逐个编译全部 DTS。
+
+**结果：20 份 DTS 全部 PASS，产出 20 个 `image-*.dtb`，0 失败。**
+
+```
+OK   rk3528-hinlink-h28k            35108 B      OK   rk3568-hinlink-h68k-new         65056 B
+OK   rk3528-hinlink-h29k            36826 B      OK   rk3568-hinlink-h69k-3eth        65302 B
+OK   rk3528-hinlink-h29k-v1.3-1.14  36559 B      OK   rk3568-hinlink-h69k-mini        66164 B
+OK   rk3528-hinlink-h29k-v5-1.14    36829 B      OK   rk3588-hinlink-h88k-v2         133616 B
+OK   rk3528-hinlink-h29k-v5-1.49    38580 B      OK   rk3588-hinlink-h88k-v3         133922 B
+OK   rk3528-hinlink-ht2             35534 B      OK   rk3588-hinlink-h89k             94821 B
+OK   rk3568-hinlink-h66k            61745 B      （另含 h68k-a / a-usb / c / c-usb3 /
+OK   rk3568-hinlink-h68k            63628 B        d / d-usb 等共 20 份）
+```
+
+**这一轮真实编译共抓出 6 类静态工具查不到的问题**（全部已修）：
+
+| # | 问题 | 影响 | 根因 |
+|---|---|---|---|
+| 1 | `RK_FUNC_3` 未定义 | 5 份 DTS `syntax error` | 6.18 的 `dt-bindings/pinctrl/rockchip.h` **只保留 `RK_FUNC_GPIO`**，`RK_FUNC_1..7` 已被内核删除；改用数字 `3` |
+| 2 | `rk3588s-vpu/npu/gpu/crypto.dtsi` 缺失 | H88K/H89K 无法编译 | `rk3588s-ip.dtsi` 依赖这 4 个 iStoreOS 私有 dtsi，本仓库漏带；已从 iStoreOS 补齐 |
+| 3 | `rk809_grf` phandle 不存在 | 5 份 DTS 编译失败 | 6.18 已无 rk809 节点；这 5 份还是从主线旧版继承的残留；已删除 |
+| 4 | `sdmmc2m0_bus4/_cmd/_clk` 重复定义 | 5 份 DTS `duplicate_label` | 内核 `rk3568-pinctrl.dtsi` 已提供且内容逐项相同；删除本地重复定义 |
+| 5 | `gmac0_miim` 等重复 + funct 值错误 | H89K `duplicate_label` | 我们写成 `RK_FUNC_GPIO`(0)，内核是 **1**（正确的 MDIO 功能）；删除本地定义改用内核的 |
+| 6 | `backlight` 写成顶层裸节点 | 1.49" 屏 DTS `syntax error` | DTS 顶层只能是 `/ { }` 或 `&label { }`；改为挂在 `&{/}` 下 |
+
+另修正 **`9528` fbcon patch**：其上下文按上游 6.18 写，但 immortalwrt 的
+6.18.55 里 `struct fbcon_ops` 已改名 `struct fbcon_par`，导致 Hunk #1 FAILED。
+已在真实内核树上重新生成，现可干净应用。
+
+> ★ **教训**：`dts_syntax_check.py`（括号平衡）与 `check_phandle.py`（标签引用）
+> 都查不出 **宏未定义**（`RK_FUNC_3`）与 **duplicate_label** 这类问题，
+> 只有真实 dtc 编译能发现。适配层改完必须走一次真实编译。
+
 ### ⚠️ RK3528 的 USB / PCIe 控制器在内核 6.18 里缺失
 
 `tools/check_phandle.py` 报出 6 份 RK3528 DTS 引用了无法解析的标签：
@@ -601,13 +639,15 @@ patch -p1 --dry-run < <仓库>/patches/9999-fbtft-read-display-offset-from-dt.pa
 immortalwrt `openwrt-24.10` 的 `KERNEL_PATCHVER` 是 **6.6** ——
 也就是说 RK3528 要用 ≥6.14 的内核才有料。
 
-⇒ **本仓库 6 份 RK3528 DTS（h28k / h29k×4 / ht2）在 6.18 上会因
-phandle 找不到而编译失败**，需要：
-- 用 **≥ 6.14** 的内核（6.6 与 6.12 都没有 RK3528，6.14 起才有）；且
-- 确认所用内核的 `rk3528.dtsi` 已包含 `pcie` 与 `usb2phy` 节点。
+**已处理**：把引用这些不存在节点的段落**注释保留**（不删原文，便于内核补齐后
+恢复），保留说明文字。涉及 h29k 三份的 `&usb2phy0_host` / `&usb2phy0_otg` /
+`&usb2phy` / `&sfc`。
 
-这 6 份 DTS 的其余内容（gmac / combphy / sdio / pwm / 屏/ 5G 模组 IO）
-已按厂商 dtb 核对无误，**只要内核补齐这两个控制器即可编译**。
+⇒ 处理后 **20 份 DTS 在 6.18 上全部编译通过**（见上一节的实测结果）。
+
+⚠️ 仍需要注意的是：**用 immortalwrt 24.10（`KERNEL_PATCHVER=6.6`）编不出
+RK3528** —— 6.6/6.12 内核树里根本没有这个 SoC（RK3528 自 Linux 6.14 引入）。
+RK3528 机型必须用 **≥ 6.14** 的内核（本仓库实测 6.18 可用）。
 
 ### ⚠️ 2 份 DTS 存在版本错配（H88K，非本轮引入）
 
