@@ -1,0 +1,107 @@
+#!/bin/sh /lib/ucode/luci
+
+# HinLink 机型 LED 配置
+#
+# 每机型独立分支。LED 颜色与 GPIO 来自厂商 dtb 的 gpio-leds / leds 节点。
+# ⚠️ 下列 color/label 需按实机确认后调整；未列出的LED 保持默认（常亮或��灭）。
+
+
+case "$board" in
+
+
+# ---- H68K A/B ----
+
+hinlink,opc-h68k-a|\
+	
+
+linkstar,opc-h68k-a
+
+	ucidef_set_led_default "power" "POWER" "green:work" "1"
+	ucidef_set_led_netdev "wan" "WAN" "blue:net" "eth0"
+
+	;;
+
+
+# ---- H68K C/D/F ----
+
+hinlink,opc-h68k-c|\
+	
+
+linkstar,opc-h68k-c
+
+	ucidef_set_led_netdev "wan" "WAN" "blue:net" "eth3"
+	ucidef_set_led_ide "disk" "DISK" "yellow:disk"
+
+	;;
+
+
+# ---- H68K C USB3 ----
+
+hinlink,opc-h68k-c-usb3
+
+	ucidef_set_led_netdev "wan" "WAN" "blue:net" "eth3"
+
+	;;
+
+
+# ---- H68K D ----
+
+hinlink,opc-h68k-d|\
+	
+
+linkstar,opc-h68k-d
+
+	ucidef_set_led_netdev "wan" "WAN" "blue:net" "eth0"
+
+	;;
+
+
+# ---- H68K new ----
+
+hinlink,opc-h68k-new
+
+	ucidef_set_led_netdev "wan" "WAN" "blue:net" "eth0"
+
+	;;
+
+
+# ---- H69K ----
+
+hinlink,opc-h69k
+
+	ucidef_set_led_netdev "wan" "WAN" "blue:net" "eth0"
+
+	;;
+
+
+# ---- H69K mini ----
+
+hinlink,opc-h69k-mini
+
+	ucidef_set_led_netdev "wan" "WAN" "blue:net" "eth0"
+
+	;;
+
+
+# ---- H66K ----
+
+hinlink,h66k
+
+	ucidef_set_led_netdev "wan" "WAN" "blue:net" "eth0"
+
+	;;
+
+
+# ---- H28K ----
+
+hinlink,h28k
+
+	ucidef_set_led_netdev "wan" "WAN" "blue:wan" "eth1"
+	ucidef_set_led_netdev "lan" "LAN" "amber:lan" "eth0"
+
+	;;
+
+
+	*)
+		;;
+esac

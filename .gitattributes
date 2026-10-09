@@ -1,0 +1,11 @@
+# DTS / shell 脚本必须 LF：CRLF 会导致 dtc 与 sh 解析异常
+*.dts         text eol=lf
+*.dtsi        text eol=lf
+*.h           text eol=lf
+*.sh          text eol=lf
+01_leds       text eol=lf
+02_network    text eol=lf
+*.mk          text eol=lf
+*.hinlink     text eol=lf
+*.py          text eol=lf
+*.md          text eol=lf

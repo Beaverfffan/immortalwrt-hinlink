@@ -1,0 +1,111 @@
+#!/bin/sh /lib/ucode/luci
+
+# HinLink 机型网络配置
+#
+# 每机型独立分支，映射写死，不做自适应探测。
+# 依据：厂商 2022/2023/2024 固件的 board.d/02_network 原文
+#
+# 命名对照（厂商曾用过的 compatible 前缀）：
+#   hinlink,opc-h68k-a / -c      2022 五改型（a-b / c-d / c-d-f / c-usb3）
+#   hinlink,opc-h68k-d            2023.4 推荐版
+#   hinlink,opc-h68k-new          2023末~2024（与 H69K 共底板）
+#   hinlink,opc-h69k              装 USB 5G 模组的真 69K
+#   hinlink,opc-h69k-mini         体积精简版
+#
+# 网口枚举前提（immortalwrt 6.18 内核 dtc顺序）：
+#   gmac0     -> eth0   (SoC 内部控制器，顺序固定)
+#   gmac1     -> eth1   (SoC 内部控制器，顺序固定)
+#   rtl8125_1 -> eth2   (PCIe，按 PCI 扫描顺序)
+#   rtl8125_2 -> eth3   (PCIe)
+# ⚠️ 若某机型无 pcie-eth，则不存在 eth2/eth3，下方映射已按实际配置写死。
+
+
+case "$board" in
+
+# ---- H68K A/B：2022 双千兆版，仅 2 个口----
+
+hinlink,opc-h68k-a|\
+	linkstar,opc-h68k-a)
+		ucidef_set_interfaces_lan_wan 'eth1' 'eth0'
+		;;
+
+
+# ---- H68K C/D/F：2022 四网口版，2×RTL8125 ----
+
+hinlink,opc-h68k-c|\
+	linkstar,opc-h68k-c)
+		ucidef_set_interfaces_lan_wan 'eth0 eth2 eth3' 'eth1'
+		;;
+
+
+# ---- H68K C USB3：2022 四网口 + USB3 ----
+
+hinlink,opc-h68k-c-usb3)
+		ucidef_set_interfaces_lan_wan 'eth0 eth2 eth3' 'eth1'
+		;;
+
+
+# ---- H68K D：2023.4 推荐版，WAN = eth0（网口全识别）----
+
+hinlink,opc-h68k-d|\
+	linkstar,opc-h68k-d)
+		ucidef_set_interfaces_lan_wan 'eth1 eth2 eth3' 'eth0'
+		;;
+
+
+# ---- H68K new：2023末~2024 现行版 ----
+
+hinlink,opc-h68k-new)
+		ucidef_set_interfaces_lan_wan 'eth1 eth2 eth3' 'eth0'
+		;;
+
+
+# ---- H69K：屏蔽 1 个 GMAC ----
+
+hinlink,opc-h69k)
+		ucidef_set_interfaces_lan_wan 'eth1 eth2' 'eth0'
+		;;
+
+
+# ---- H69K mini：精简版 ----
+
+hinlink,opc-h69k-mini)
+		ucidef_set_interfaces_lan_wan 'eth1' 'eth0'
+		;;
+
+
+# ---- H66K：无板载网口，单口 ----
+
+hinlink,h66k)
+		ucidef_set_interfaces_lan_wan 'eth0' 'eth1'
+		;;
+
+
+# ---- H28K：RK3528，双口 ----
+
+hinlink,h28k)
+		ucidef_set_interfaces_lan_wan 'eth0' 'eth1'
+		;;
+
+
+	*)
+		;;
+esac
+
+
+# 从 eMMC CID 生成稳定的 MAC
+case "$board" in
+hinlink,opc-h68k-a|\
+hinlink,opc-h68k-c|\
+hinlink,opc-h68k-c-usb3|\
+hinlink,opc-h68k-d|\
+hinlink,opc-h68k-new|\
+hinlink,opc-h69k|\
+hinlink,opc-h69k-mini|\
+hinlink,h68k|\
+hinlink,h66k|\
+hinlink,h28k)
+		wan_mac=$(macaddr_generate_from_mmc_cid mmcblk0)
+		lan_mac=$(macaddr_add "$wan_mac" 1)
+		;;
+esac

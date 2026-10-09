@@ -1,0 +1,173 @@
+
+# ===== HinLink 全机型（每机型独立，不做自适应） =====
+
+
+define Device/hinlink_h6xk_base
+
+  $(Device/rk3568)
+
+  DEVICE_VENDOR := HINLINK
+
+  DEVICE_PACKAGES := kmod-ata-ahci-dwc kmod-r8169 wpad-basic-mbedtls
+
+endef
+
+
+# M.2 (PCIe) 无线模块机型
+
+define Device/hinlink_h6xk_m2_wifi
+
+  $(Device/hinlink_h6xk_base)
+
+  DEVICE_PACKAGES += kmod-mt7921e
+
+endef
+
+
+# 板载 SDIO 无线（AIC8800，全新机器）
+
+define Device/hinlink_h6xk_sdio_aic8800
+
+  $(Device/hinlink_h6xk_base)
+
+  DEVICE_PACKAGES += kmod-aic8800s
+
+endef
+
+
+# 板载 SDIO 无线（AP6256，老机器 Broadcom brcmfmac）
+
+define Device/hinlink_h6xk_sdio_ap6256
+
+  $(Device/hinlink_h6xk_base)
+
+  DEVICE_PACKAGES += kmod-brcmfmac kmod-firmware-brcm80211
+
+endef
+
+
+define Device/hinlink_opc-h68k-a
+
+  $(Device/hinlink_h6xk_sdio_ap6256)
+
+  DEVICE_MODEL := H68K A/B
+
+  DEVICE_ALT0_VENDOR := LinkStar
+
+  DEVICE_ALT0_MODEL := H68K A/B
+
+  DEVICE_DTS := rk3568-hinlink-h68k-a
+
+  UBOOT_DEVICE_NAME := hinlink-h68k-a-rk3568
+
+endef
+
+TARGET_DEVICES += hinlink_opc-h68k-a
+
+
+define Device/hinlink_opc-h68k-c
+
+  $(Device/hinlink_h6xk_m2_wifi)
+
+  DEVICE_MODEL := H68K C/D/F
+
+  DEVICE_ALT0_VENDOR := LinkStar
+
+  DEVICE_ALT0_MODEL := H68K C/D/F
+
+  DEVICE_DTS := rk3568-hinlink-h68k-c
+
+  UBOOT_DEVICE_NAME := hinlink-h68k-c-rk3568
+
+endef
+
+TARGET_DEVICES += hinlink_opc-h68k-c
+
+
+define Device/hinlink_opc-h68k-c-usb3
+
+  $(Device/hinlink_h6xk_m2_wifi)
+
+  DEVICE_MODEL := H68K C USB3
+
+  DEVICE_ALT0_VENDOR := LinkStar
+
+  DEVICE_ALT0_MODEL := H68K C USB3
+
+  DEVICE_DTS := rk3568-hinlink-h68k-c-usb3
+
+  UBOOT_DEVICE_NAME := hinlink-h68k-c-usb3-rk3568
+
+endef
+
+TARGET_DEVICES += hinlink_opc-h68k-c-usb3
+
+
+define Device/hinlink_opc-h68k-d
+
+  $(Device/hinlink_h6xk_m2_wifi)
+
+  DEVICE_MODEL := H68K D
+
+  DEVICE_ALT0_VENDOR := LinkStar
+
+  DEVICE_ALT0_MODEL := H68K D
+
+  DEVICE_DTS := rk3568-hinlink-h68k-d
+
+  UBOOT_DEVICE_NAME := hinlink-h68k-d-rk3568
+
+endef
+
+TARGET_DEVICES += hinlink_opc-h68k-d
+
+
+define Device/hinlink_opc-h68k-new
+
+  $(Device/hinlink_h6xk_sdio_aic8800)
+
+  DEVICE_MODEL := H68K (2023 new board)
+
+  DEVICE_ALT0_VENDOR := LinkStar
+
+  DEVICE_ALT0_MODEL := H68K
+
+  DEVICE_DTS := rk3568-hinlink-h68k-new
+
+  UBOOT_DEVICE_NAME := hinlink-h68k-new-rk3568
+
+endef
+
+TARGET_DEVICES += hinlink_opc-h68k-new
+
+
+define Device/hinlink_opc-h69k
+
+  $(Device/hinlink_h6xk_sdio_aic8800)
+
+  DEVICE_MODEL := H69K (5G)
+
+  DEVICE_DTS := rk3568-hinlink-h69k
+
+  UBOOT_DEVICE_NAME := hinlink-h69k-rk3568
+
+  DEVICE_PACKAGES += kmod-hwmon-pwmfan kmod-usb-serial-option
+
+endef
+
+TARGET_DEVICES += hinlink_opc-h69k
+
+
+define Device/hinlink_opc-h69k-mini
+
+  $(Device/hinlink_h6xk_m2_wifi)
+
+  DEVICE_MODEL := H69K mini
+
+  DEVICE_DTS := rk3568-hinlink-h69k-mini
+
+  UBOOT_DEVICE_NAME := hinlink-h69k-mini-rk3568
+
+endef
+
+TARGET_DEVICES += hinlink_opc-h69k-mini
