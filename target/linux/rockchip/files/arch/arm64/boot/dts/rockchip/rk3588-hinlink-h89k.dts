@@ -1,0 +1,234 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * HinLink OPC-H89K
+ *
+ * HinLink 适配 for immortalwrt —— 每机型独立 DTS，不做自适应。
+ *
+ * ★ 从零移植：H89K 此前在所有 OpenWrt 衍生固件中零适配（2022-2025 年
+ *   历次调研均未找到）。本 DTS 全部参数来自厂商 immortalwrt v1.2.2
+ *   (2025-06-08) 固件内解出的 dtb（88036 B），逐项核对。
+ *
+ * 硬件构成（RK3588，厂商 dtb 实证）
+ * --------------------------------
+ *   网口 = 1×GMAC(fe1b0000, RGMII) + 2×RTL8125 2.5G (PCIe)
+ *         GMAC fe1c0000 在厂商 dtb 里 disabled，本机不用。
+ *         PCIe 网卡分别挂在 pcie2x1l1(fe180000) 与 pcie2x1l2(fe190000)，
+ *         reset 脚分别是 GPIO2_A0 与 GPIO5_A0。
+ *
+ *   厂商 02_network 映射：LAN "eth0 eth1" / WAN "eth2"
+ *         ⇒ 板载 RGMII 作WAN（GMAC 节点显式 label = "eth2"）
+ *
+ *   显示 = ST7789V 135×240 rot90 @spi@fecb0000
+ *   风扇 = pwm3(febf0020)
+ *   模组 = 4G/5G 供电（GPIO4_A3）与复位（GPIO4_C6）
+ *
+ *   ★ SATA：厂商 dtb 里 sata0/1/2 三路**均为 disabled**
+ *     （combphy 也未使能），本机不接 SATA 座，故本 DTS 不使能 sata。
+ *
+ * 枚举顺序（immortalwrt 6.18 dtc 顺序）
+ * ------------------------------------
+ *   GMAC 是 SoC 内部控制器，枚举固定 => eth0
+ *   PCIe 网卡按 bus 扫描顺序        => eth1 / eth2
+ *
+ *   ⚠️ GMAC 节点在厂商 dtb 里 label = "eth2"，与 dtc 枚举的 eth0 不一致。
+ *     本方案沿用厂商 02_network 的映射（LAN eth0 eth1 / WAN eth2），
+ *     与出厂固件行为一致。
+ */
+
+/dts-v1/;
+
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/pinctrl/rockchip.h>
+
+#include "rk3588.dtsi"
+
+/ {
+	model = "HINLINK OPC-H89K Board";
+	compatible = "hinlink,opc-h89k", "rockchip,rk3588";
+
+	chosen {
+		stdout-path = "serial2:1500000n8";
+	};
+
+	/* ---- 板载供电（厂商 dtb 的 regulator-fixed 节点） ---- */
+	vcc_5v0_sys: vcc-5v0-sys {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc5v0_sys";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+	};
+
+	vcc3v3_modem: vcc-3v3-modem {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc3v3_modem";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+	};
+
+	/* ---- 4G / 5G 模组：H89K 的标志性特征 ---- */
+	modem_power: modem-power {
+		compatible = "regulator-fixed";
+		regulator-name = "modem_power";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		vin-supply = <&vcc_5v0_sys>;
+		gpio = <&gpio4 RK_PA3 GPIO_ACTIVE_LOW>;
+	};
+
+	modem_reset: modem-reset {
+		compatible = "regulator-fixed";
+		regulator-name = "modem_reset";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		vin-supply = <&vcc3v3_modem>;
+		gpio = <&gpio4 RK_PC6 GPIO_ACTIVE_LOW>;
+	};
+};
+
+/* ============================================================
+ * 网口 1/3：GMAC(RGMII) —— 板载口，厂商标为 WAN
+ * ============================================================ */
+
+&gmac0 {
+	clock_in_out = "output";
+	phy-mode = "rgmii";
+	/* 厂商 dtb 原值 */
+	tx_delay = <0x42>;
+	rx_delay = <0x34>;
+	snps,reset-gpio = <&pinctrl RK_PB3 GPIO_ACTIVE_LOW>;
+	snps,reset-active-low;
+	snps,reset-delays-us = <0 20000 100000>;
+	phy-handle = <&rgmii_phy0>;
+
+	pinctrl-names = "default";
+	/* 厂商 dtb 原值：GPIO2_A6/A7/B1/B2 数据 + GPIO2_B0/B3 时钟 */
+	pinctrl-0 = <&gmac0_miim
+		     &gmac0_rgmii_bus
+		     &gmac0_rgmii_clk
+		     &gmac0_tx_bus2
+		     &gmac0_rx_bus2>;
+
+	label = "eth2";
+	status = "okay";
+};
+
+&gmac1 {
+	status = "disabled";
+};
+
+&mdio0 {
+	rgmii_phy0: ethernet-phy@1 {
+		compatible = "ethernet-phy-ieee802.3-c22";
+		reg = <0x1>;
+	};
+};
+
+/* ============================================================
+ * 网口 2/3 与 3/3：2×RTL8125 2.5G 走 PCIe
+ *   厂商 dtb 在这两个控制器下各挂一个 pci10ec,8125
+ * ============================================================ */
+
+&pcie2x1l1 {
+	reset-gpios = <&gpio2 RK_PA0 GPIO_ACTIVE_LOW>;
+	max-link-speed = <2>;              /* Gen2 = 5 GT/s，厂商原值 */
+	status = "okay";
+
+	pcie2-0 {
+		compatible = "pci10ec,8125";
+		reset-gpios = <&gpio2 RK_PA0 GPIO_ACTIVE_LOW>;
+	};
+};
+
+&pcie2x1l2 {
+	reset-gpios = <&gpio5 RK_PA0 GPIO_ACTIVE_LOW>;
+	max-link-speed = <2>;
+	status = "okay";
+
+	pcie2-1 {
+		compatible = "pci10ec,8125";
+		reset-gpios = <&gpio5 RK_PA0 GPIO_ACTIVE_LOW>;
+	};
+};
+
+/* ============================================================
+ * 引脚（全部为厂商 dtb 原值）
+ * ============================================================ */
+
+&pinctrl {
+	gmac {
+		gmac0_miim: gmac0-miim {
+			rockchip,pins = <4 RK_PC4 RK_FUNC_GPIO &pcfg_pull_none>,
+					<4 RK_PC5 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+		gmac0_rgmii_bus: gmac0-rgmii-bus {
+			rockchip,pins = <2 RK_PA6 RK_FUNC_GPIO &pcfg_pull_none>,
+					<2 RK_PA7 RK_FUNC_GPIO &pcfg_pull_none>,
+					<2 RK_PB1 RK_FUNC_GPIO &pcfg_pull_none>,
+					<2 RK_PB2 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+		gmac0_rgmii_clk: gmac0-rgmii-clk {
+			rockchip,pins = <2 RK_PB0 RK_FUNC_GPIO &pcfg_pull_none>,
+					<2 RK_PB3 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+		gmac0_tx_bus2: gmac0-tx-bus2 {
+			rockchip,pins = <2 RK_PB6 RK_FUNC_GPIO &pcfg_pull_none>,
+					<2 RK_PB7 RK_FUNC_GPIO &pcfg_pull_none>,
+					<2 RK_PC0 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+		gmac0_rx_bus2: gmac0-rx-bus2 {
+			rockchip,pins = <2 RK_PC1 RK_FUNC_GPIO &pcfg_pull_none>,
+					<2 RK_PC2 RK_FUNC_GPIO &pcfg_pull_none>,
+					<4 RK_PC2 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
+	led {
+		led_work_en: led-work-en {
+			rockchip,pins = <0 RK_PA0 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+		led_net_en: led-net-en {
+			rockchip,pins = <2 RK_PC3 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+		led_sata_en: led-sata-en {
+			rockchip,pins = <2 RK_PC5 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+		led_user_en: led-user-en {
+			rockchip,pins = <3 RK_PB7 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
+	ir {
+		ir_int_pin: ir-int-pin {
+			rockchip,pins = <0 RK_PD4 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+	};
+};
+
+/* ============================================================
+ * 板载器件
+ * ============================================================ */
+
+/* 风扇 PWM（厂商 dtb 里 pwm@febf0020 为 okay）*/
+&pwm3 {
+	status = "okay";
+};
+
+/* ============================================================
+ * ★ 未配置项（厂商 dtb 中同样未启用，不擅自添加）
+ *
+ *   SATA  —— 厂商 dtb 里 sata0/1/2 与 combphy 均 disabled，本机无 SATA 座
+ *   屏    —— 厂商 dtb 有 panel（ST7789V 135×240 rot90 @spi@fecb0000，
+ *            dc-gpios = GPIO1_D4，spi-max-frequency = 1 MHz），
+ *            需 fbtft 屏驱动配置，见 README 待确认项
+ *   RTC   —— 厂商 dtb 有 hym8563-int 引脚（GPIO0_B2）但无 rtc 节点
+ *   红外  —— 厂商 dtb 有 ir-int-pin（GPIO0_D4）引脚定义，
+ *            但未见 gpio-ir-receiver 节点，故本 DTS 不使能
+ * ============================================================ */

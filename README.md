@@ -4,8 +4,8 @@ HinLink（芯联）全系列路由器在 immortalwrt 上的设备树与板级配
 **按硬件变体一机一档，不做运行时自适应探测** —— 每个 `compatible` 对应一份独立
 DTS，`02_network` 里 `ethN` 映射写死。
 
-- **21 个机型** · 22 份 DTS · 7 份 dtsi · 4 份内核 patch · 4 个工具脚本
-- 覆盖 RK3568（H66K / H68K / H69K）、RK3528（H28K / H29K / HT2）、RK3588（H88K）
+- **22 个机型** · 23 份 DTS · 7 份 dtsi · 4 份内核 patch · 4 个工具脚本
+- 覆盖 RK3568（H66K / H68K / H69K）、RK3528（H28K / H29K / HT2）、RK3588（H88K / **H89K**）
 
 > 本仓库是**支线仓库**，只提供补丁文件，不含完整 OpenWrt 源码。
 > 应用方式见 [`docs/APPLY.md`](docs/APPLY.md)。
@@ -84,12 +84,13 @@ python3 tools/dts_syntax_check.py <dts> <include-dirs...>   # DTS 结构
 | **h29k-v5-2.8** | v5 主板 | 2.8" 240×320 rot270 | 2 | SDIO |
 | **ht2** | — | 无 | RGMII + PCIe | SDIO SDR50 |
 
-### RK3588 — H88K（2 个机型）
+### RK3588 — H88K / H89K（3 个机型）
 
 | 机型 | 存储 | 屏 | 口 | 网络 |
 |---|---|---|---|---|
 | **h88k-v2** | combphy0_ps + SATA | — | 4 | 1×RGMII + 2×PCIe |
 | **h88k-v3** | combphy0_ps + PCIe RTL8125 | SPI ST7789V | 4 | 1×RGMII + 2×PCIe |
+| **h89k** | 无 SATA | ST7789V 135×240 rot90 | **3** | 1×RGMII + 2×RTL8125 |
 
 ### 关于 lede 的 H29K DTS
 
@@ -123,6 +124,7 @@ RK3568 板（GMAC 为 SoC 内部控制器，枚举固定；PCIe 按扫描顺序�
 | h29k（全系） | `eth1` | `eth0` |
 | ht2 | `eth0` | `eth1` |
 | h88k-v2 / v3 | `eth1 eth2 eth3` | `eth0` |
+| **h89k** | `eth0 eth1` | `eth2` |
 
 ---
 
@@ -228,6 +230,50 @@ phy-mode = "rgmii-id"，snps,reset-delays-us = <0 20000 100000>
 
 > ⚠️ v5 的电池电压读取**依赖 `9527-rockchip-rk3528-iio-add-adc.patch`**，没有它读不出数据。
 
+### 4.7 H89K：从零移植的 RK3588
+
+H89K 在 2022-2025 年的历次 OpenWrt 衍生固件调研中**始终零适配**。
+本方案从厂商 immortalwrt v1.2.2（2025-06-08）固件内解出的 dtb 重建。
+
+**网口构成**
+
+| 项 | 值 |
+|---|---|
+| GMAC | `gmac0`（fe1b0000），RGMII，`tx_delay 0x42` / `rx_delay 0x34` |
+| GMAC 复位 | `&pinctrl RK_PB3` 低有效，`snps,reset-delays-us = <0 20000 100000>` |
+| GMAC PHY | `ethernet-phy@1`（MDIO 地址 1） |
+| PCIe 网卡 ×2 | `pcie2x1l1`(fe180000) 与 `pcie2x1l2`(fe190000)，各挂一个 `pci10ec,8125` |
+| PCIe 复位 | GPIO2_A0 与 GPIO5_A0，低有效 |
+| PCIe 速率 | `max-link-speed = <2>`（Gen2 = 5 GT/s） |
+
+GMAC 显式引脚（厂商 dtb 原值）：
+
+```
+gmac0_miim      GPIO4_C4 GPIO4_C5
+gmac0_rgmii_bus GPIO2_A6 GPIO2_A7 GPIO2_B1 GPIO2_B2
+gmac0_rgmii_clk GPIO2_B0 GPIO2_B3
+gmac0_tx_bus2   GPIO2_B6 GPIO2_B7 GPIO2_C0
+gmac0_rx_bus2   GPIO2_C1 GPIO2_C2 GPIO4_C2
+```
+
+**⚠️ 枚举顺序有个陷阱**：厂商 GMAC 节点带 `label = "eth2"`，
+但 dtc 实际把它枚举成 `eth0`（GMAC 是 SoC 内部控制器，枚举固定）。
+厂商 `02_network` 写的是 `LAN "eth0 eth1" / WAN "eth2"` ——
+即**板载 RGMII 作 WAN**，两路 PCIe 作 LAN。
+本方案沿用厂商映射，与出厂固件行为一致。
+
+**其它硬件**
+
+| 项 | 状态 |
+|---|---|
+| SATA | ★ **三路均 disabled** —— 厂商 dtb 里 `sata0/1/2` 与 combphy 全未使能，本机不接 SATA 座 |
+| 屏 | ST7789V 135×240 rot90 @ `spi@fecb0000`，`dc-gpios` = GPIO1_D4，SPI 1 MHz |
+| 风扇 | `pwm3`（febf0020） |
+| 4G/5G 模组 | 供电 GPIO4_A3（5V）、复位 GPIO4_C6（3.3V） |
+| 红外 | dtb 有 `ir-int-pin`（GPIO0_D4）引脚定义，但无 `gpio-ir-receiver` 节点 |
+
+**未配置项**（厂商 dtb 中同样未启用，未擅自添加）：SATA、屏、RTC、红外接收。
+
 ---
 
 ## 五、仓库结构
@@ -256,10 +302,12 @@ target/linux/rockchip/
 │   ├── rk3528-hinlink-h29k-v5-1.14.dts       │
 │   ├── rk3528-hinlink-h29k-v5-2.8.dts        │
 │   ├── rk3528-hinlink-h29k-v5-1.49.dts       ┘ 触屏版
-│   ├── rk3588-hinlink-h88k-v2.dts            ┐ 2 份 RK3588
-│   ├── rk3588-hinlink-h88k-v3.dts            ┘
+│   ├── rk3588-hinlink-h88k-v2.dts            ┐
+│   ├── rk3588-hinlink-h88k-v3.dts            │ 3 份 RK3588
+│   ├── rk3588-hinlink-h89k.dts               ┘ 从零移植，厂商 dtb 实证
 │   ├── rk3588-hinlink.dtsi  + 5 个私有 dtsi   ← iStoreOS 私有，须连带移植
-│   └── vendor-h29k-v5-1.49.dtb               厂商原始 dtb（1.49 寸参数溯源）
+│   ├── vendor-h29k-v5-1.49.dtb               厂商原始 dtb（H29K 1.49 寸溯源）
+│   └── vendor-h89k.dtb                       厂商原始 dtb（H89K 溯源）
 │
 ├── armv8/base-files/etc/board.d/
 │   ├── 02_network                            网口映射（写死，不探测）
@@ -305,8 +353,8 @@ H88K 依赖 `rk3588-hinlink.dtsi`（immortalwrt 6.18 内核中没有），它又
 
 | 项目 | 状态 |
 |---|---|
-| DTS 语法结构（22 份） | ✅ 全部 PASS |
-| 口数与板级映射一致 | ✅ 11/11 RK3568 机型 OK |
+| DTS 语法结构（23 份） | ✅ 全部 PASS |
+| 口数与板级映射一致 | ✅ 23/23 机型 OK（RK3568 + RK3528 + RK3588） |
 | 设备定义 ↔ DTS 文件对齐 | ✅ 无孤儿、无缺失 |
 | `compatible` 唯一性 | ✅ 全部唯一 |
 | dtc 完整编译 | ❌ **未验证** |
@@ -392,6 +440,7 @@ pcie3x1 / pcie3x2 在 DTS 里通常没有显式节点，
 | 2023 厂商固件（`R23.4.20`） | h68k-d |
 | 2024 厂商固件（`QWRT-R24.07.07`） | h68k / h69k 硬件定义 |
 | 2025 厂商固件（`H29K-NEW-UI-20251029`） | **h29k v5 1.49 寸触屏版** |
+| 2025 厂商固件（`immortalwrt-v1.2.2-20250608-...h89k`） | **h89k**（此前全网零适配） |
 | H29K 设备树 ×5 + patch ×4（用户提供） | h29k v1.3 / v5 各屏尺寸 |
 | 上游 `coolsnowwolf/lede` | **h66k** / ht2 / h28k / h29k 参考 |
 | 上游 `istoreos/istoreos` | h88k v2 / v3 |

@@ -165,7 +165,17 @@ hinlink,opc-ht2)
 # ---- RK3588 机型 ----
 
 hinlink,h88k-v2|\
-	hinlink,h88k-v3)
+	hinlink,h88k-v3|\
+hinlink,opc-h89k)
 		# H88K：1×RGMII + 2×PCIe，WAN 走 RGMII
 		ucidef_set_interfaces_lan_wan 'eth1 eth2 eth3' 'eth0'
+		;;
+
+# ---- H89K：RK3588，1×GMAC + 2×RTL8125 = 3 口----
+# 厂商固件 02_network 原值：ucidef_set_interfaces_lan_wan "eth0 eth1" "eth2"
+# eth0 = GMAC(板载 RGMII)，eth1/eth2 = 两路 PCIe RTL8125
+# 厂商把 GMAC 标为 WAN（GMAC 节点显式 label = "eth2"）
+
+hinlink,opc-h89k)
+		ucidef_set_interfaces_lan_wan 'eth0 eth1' 'eth2'
 		;;

@@ -41,10 +41,15 @@ EXPECT = {
     'rk3568-hinlink-h68k-new':    4,
     'rk3568-hinlink-h69k-3eth':   3,  # 屏蔽 gmac1 -> 1xGMAC + 2xRTL8125
     'rk3568-hinlink-h69k-mini':   4,  # = H68K max，2xGMAC + 2xRTL8125
+    'rk3588-hinlink-h89k':        3,  # 1xGMAC + 2xRTL8125，屏蔽 gmac1
 }
 
 # 只读这些节点
-PORTS = ('gmac0', 'gmac1', 'pcie3x1', 'pcie3x2')
+# 各 SoC 的网口控制器 label（RK3568 与 RK3588 命名不同）
+PORTS = {
+    'rk3568': ('gmac0', 'gmac1', 'pcie3x1', 'pcie3x2'),
+    'rk3588': ('gmac0', 'gmac1', 'pcie2x1l1', 'pcie2x1l2'),
+}
 
 
 def node_status(text, node):
@@ -57,10 +62,10 @@ def node_status(text, node):
     return s.group(1) if s else 'okay'      # 未显式写 status 视为 okay
 
 
-def dts_ports(dts, dtsi):
+def dts_ports(dts, dtsi, soc='rk3568'):
     """口数 = okay 的 GMAC + okay 的 PCIe 控制器。DTS 覆盖 dtsi。"""
     n = 0
-    for node in PORTS:
+    for node in PORTS[soc]:
         st = node_status(dts, node)
         if st is None:
             st = node_status(dtsi, node)
@@ -101,14 +106,21 @@ def parse_net(path):
 
 
 def main():
-    dtsi = io.open(DTSI, encoding='utf-8').read()
     net = parse_net(NET)
+    dtsi_cache = {}
+
+    def get_dtsi(soc):
+        if soc not in dtsi_cache:
+            p = os.path.join(DTS, 'rk3568-hinlink-opc.dtsi' if soc == 'rk3568'
+                            else 'rk3588-hinlink.dtsi')
+            dtsi_cache[soc] = io.open(p, encoding='utf-8').read()
+        return dtsi_cache[soc]
 
     print('%-40s %7s %6s %8s  %s' % ('DTS', 'DTS口', '期望', '映射数', 'LAN / WAN'))
     print('-' * 100)
 
     bad = 0
-    files = sorted(glob.glob(os.path.join(DTS, 'rk3568-hinlink-h6*.dts')))
+    files = sorted(glob.glob(os.path.join(DTS, 'rk35*-hinlink-h*.dts')))
     if not files:
         print('未找到 DTS 文件，检查路径：%s' % DTS)
         return 1
@@ -118,8 +130,8 @@ def main():
         text = io.open(fn, encoding='utf-8').read()
         cp = re.search(r'compatible = "([^"]+)"', text)
         cp = cp.group(1) if cp else '?'
-
-        n = dts_ports(text, dtsi)
+        soc = 'rk3588' if 'rk3588' in base else 'rk3568'
+        n = dts_ports(text, get_dtsi(soc), soc)
         exp = EXPECT.get(base, '?')
 
         if cp in net:
