@@ -28,6 +28,13 @@ UBOOT_OF = {
     'rk3568-hinlink-h68k': 'hinlink-h68k-rk3568',   # 含 h68k-* 与 h69k*
     'rk3568-hinlink-h69k': 'hinlink-h68k-rk3568',
     'rk3528-hinlink-h28k': 'hinlink-h28k-rk3528',
+    # 下面两项是本仓库自建（板级支持见 patches-uboot/108-*.patch）
+    'rk3528-hinlink-h29k': 'hinlink-h29k-rk3528',   # 3 个变体共用一个 u-boot
+    'rk3528-hinlink-ht2': 'hinlink-ht2-rk3528',
+    # RK3588 三款（板级支持见 patches-uboot/109-*.patch）
+    'rk3588-hinlink-h88k-v2': 'hinlink-h88k-v2-rk3588',
+    'rk3588-hinlink-h88k-v3': 'hinlink-h88k-v3-rk3588',
+    'rk3588-hinlink-h89k': 'hinlink-h89k-rk3588',
 }
 
 NOTE_OK = """  # ★ u-boot：直接用**上游 OpenWrt 的 HINLINK 支持**（见 patches-uboot/）
@@ -50,11 +57,12 @@ NOTE_NONE = """  # ★ 暂不打包 u-boot：上游 OpenWrt 只为 **H28K / H66K
   BOOT_FLOW :=
 """
 
-# 匹配「旧的 u-boot 设置块」：注释若干行 + BOOT_FLOW:= 或 UBOOT_DEVICE_NAME:=xxx
+# 匹配「旧的 u-boot 设置块」：注释若干行 + 空的 BOOT_FLOW :=
+# 只处理 BOOT_FLOW 为空的块（即还没指定 u-boot 的机型）。
 OLD = re.compile(
-    r'^  # ★ 不打包 u-boot[^\n]*\n'
+    r'^  # ★[^\n]*\n'
     r'(?:  #[^\n]*\n)*'
-    r'  (?:BOOT_FLOW\s*:=\s*|UBOOT_DEVICE_NAME\s*:=\s*(\S+))\n',
+    r'  BOOT_FLOW\s*:=\s*\n',
     re.M)
 
 

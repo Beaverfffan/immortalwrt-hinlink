@@ -516,7 +516,9 @@ patches/                                      2 份内核 patch（已验证干�
 patches-uboot/                                ★ U-Boot：上游 patch 存档 + Makefile 改动
 ├── upstream/106-...HINLINK-H66K-H68K.patch   openwrt/main 原文：H66K/H68K u-boot
 ├── upstream/107-...HINLINK-H28K.patch        openwrt/main 原文：H28K u-boot
-└── 0001-...register-hinlink-devices.patch    给 uboot-rockchip/Makefile 登记我们的设备
+├── 0001-...register-hinlink-devices.patch    给 uboot-rockchip/Makefile 登记 8 个变体
+├── 108-...add-hinlink-h29k-ht2.patch         H29K / HT2 的板级 dts + overlay + defconfig
+└── 109-...add-hinlink-rk3588-uboot.patch     H88K v2/v3、H89K 的板级 dts + overlay + defconfig
 docs/APPLY.md                                 应用步骤（方案 A / B）
 docs/HARDWARE.md                             ★ 特殊硬件清单（屏/风扇/WiFi/5G 模组 IO）
 tools/                                        生成器 + 校验器 + DTB 解析器
@@ -570,93 +572,175 @@ patch -p1 --dry-run < <仓库>/patches/9999-fbtft-read-display-offset-from-dt.pa
 
 ---
 
-## 七、U-Boot（上游 openwrt 已支持 HINLINK）
+## 七、U-Boot
 
-### 上游已有的东西
+### 全机型覆盖（8 个变体，均已实编译通过）
 
-上游 `openwrt/openwrt` 的 `package/boot/uboot-rockchip/` 里**本来就有 HINLINK
-的 u-boot 支持**（本仓库早期误判为「上游没有 hinlink defconfig」而借用了同 SoC
-的 sige3 u-boot，现已改为直接用上游的）：
+| 变体 | SoC | 覆盖机型 | 来源 |
+|---|---|---|---|
+| `hinlink-h28k-rk3528` | RK3528 | H28K | **上游** openwrt `patches/107` |
+| `hinlink-h29k-rk3528` | RK3528 | H29K v1.3-1.14 / v5-1.14 / v5-1.49 | **本仓库自建** `patches-uboot/108` |
+| `hinlink-ht2-rk3528` | RK3528 | OPC-HT2 | **本仓库自建** `patches-uboot/108` |
+| `hinlink-h66k-rk3568` | RK3568 | OPC-H66K | **上游** `patches/106` |
+| `hinlink-h68k-rk3568` | RK3568 | H68K a / a-usb / c / c-usb3 / d / d-usb / new<br>+ H69K + H69K-mini | **上游** `patches/106` |
+| `hinlink-h88k-v2-rk3588` | RK3588 | OPC-H88K V2 | **本仓库自建** `patches-uboot/109` |
+| `hinlink-h88k-v3-rk3588` | RK3588 | OPC-H88K V3 | **本仓库自建** `patches-uboot/109` |
+| `hinlink-h89k-rk3588` | RK3588 | OPC-H89K | **本仓库自建** `patches-uboot/109` |
 
-| 上游条目 | SoC | 对应的 upstream patch |
-|---|---|---|
-| `U-Boot/hinlink-h28k-rk3528` | RK3528 | `patches/107-board-rockchip-add-HINLINK-H28K.patch` |
-| `U-Boot/hinlink-h66k-rk3568` | RK3568 | `patches/106-board-rockchip-add-HINLINK-H66K-H68K.patch` |
-| `U-Boot/hinlink-h68k-rk3568` | RK3568 | 同上 |
+设备定义里统一写 `UBOOT_DEVICE_NAME := <上表的变体名>` —— **18 个机型全部覆盖**，
+没有任何机型再留 `BOOT_FLOW :=` 空。
 
-这两个 patch 各做三件事：
+### 上游已有的部分（H28K / H66K / H68K）
+
+上游 `openwrt/openwrt` 的 `package/boot/uboot-rockchip/` 里本来就有这三个：
 
 ```
-106 →  arch/arm/dts/rk3568-hinlink-h66k-u-boot.dtsi   (overlay)
-       arch/arm/dts/rk3568-hinlink-h68k-u-boot.dtsi
-       configs/hinlink-h66k-rk3568_defconfig
-       configs/hinlink-h68k-rk3568_defconfig
+define U-Boot/hinlink-h28k-rk3528   $(U-Boot/rk3528/Default)
+define U-Boot/hinlink-h66k-rk3568   $(U-Boot/rk3568/Default)
+define U-Boot/hinlink-h68k-rk3568   $(U-Boot/rk3568/Default)
+```
+
+对应 defconfig 与 u-boot dts 由 `patches/106`（H66K/H68K）与 `patches/107`（H28K）
+提供，两个 patch 原样存档在 `patches-uboot/upstream/`：
+
+```
+106 →  arch/arm/dts/rk3568-hinlink-{h66k,h68k}-u-boot.dtsi   (overlay)
+       configs/hinlink-{h66k,h68k}-rk3568_defconfig
 
 107 →  arch/arm/dts/rk3528-hinlink-h28k-u-boot.dtsi
        configs/hinlink-h28k-rk3528_defconfig
        dts/upstream/src/arm64/rockchip/rk3528-hinlink-h28k.dts   ← 自带板级 dts
 ```
 
-> H66K / H68K 的板级 dts **不用 patch 带** —— u-boot 的
+> H66K / H68K 的板级 dts 不用 patch 带 —— u-boot 2026.07 的
 > `dts/upstream/src/arm64/rockchip/` 里已经有 `rk3568-hinlink-h66k.dts`、
-> `rk3568-hinlink-h68k.dts`、`rk3568-hinlink-opc.dtsi`
-> （实测 u-boot 2026.07 已包含），所以 106 只补 overlay 与 defconfig。
+> `rk3568-hinlink-h68k.dts`、`rk3568-hinlink-opc.dtsi`（实测确认）。
 > H28K 是后加的，u-boot 里还没有，故 107 连板级 dts 一起带。
 
-### 我们额外要做的事（★ 只打上游 patch 是不够的）
+### 我们额外要做的（★ 三件事，缺一不可）
 
-上游的 `BUILD_DEVICES` 只登记了上游那三个设备名（`hinlink_h28k` /
-`hinlink_h66k` / `hinlink_h68k`），而本仓库是把机型**按变体拆开的**
-（`hinlink_opc-h68k-a` / `-c` / `-c-usb3` / `-d` / `-new` / `hinlink_opc-h69k` …），
-名字对不上。所以 `patches-uboot/0001-*.patch` 做两件事：
-
-1. **补齐 BUILD_DEVICES** —— OpenWrt 的 u-boot 包靠它**反向关联**设备：
-   只有当前选中的设备出现在某个 `U-Boot/xxx` 的 `BUILD_DEVICES` 里，
-   `make defconfig` 才会保留 `CONFIG_PACKAGE_u-boot-xxx=y`。
-2. **把变体名加进 `UBOOT_TARGETS`** —— ★ 这是最容易漏的一步。
+1. **补齐 `BUILD_DEVICES`** —— 上游只登记 `hinlink_h28k` / `hinlink_h66k` /
+   `hinlink_h68k`，而本仓库是按变体拆开的（`hinlink_opc-h68k-c-usb3` 等），
+   名字对不上。OpenWrt 的 u-boot 包靠 `BUILD_DEVICES` **反向关联**设备，
+   不登记则 `make defconfig` 会丢掉 `CONFIG_PACKAGE_u-boot-xxx`。
+2. **把变体名加进 `UBOOT_TARGETS`** —— ★ 最容易漏的一步。
    `include/u-boot.mk` 里包是这么注册的：
 
    ```make
    define BuildPackage/U-Boot
-     $(foreach type,$(UBUOT_TARGETS 或 BUILD_VARIANT), $(call BuildPackage,u-boot-$(type)))
+     $(foreach type,$(if $(DUMP),$(UBOOT_TARGETS),$(BUILD_VARIANT)), \
+       $(call BuildPackage,u-boot-$(type)))
    endef
    ```
 
-   即 **`UBOOT_TARGETS` 列表里没有的变体根本不会生成包**，
-   光定义 `U-Boot/xxx` 没用 —— `tmp/.packageinfo` 里查不到该包，
-   `make defconfig` 也会把它丢掉。
+   **`UBOOT_TARGETS` 列表里没有的变体根本不会生成包**，光定义 `U-Boot/xxx` 没用。
+   实测症状：只改 `BUILD_DEVICES` 时 `grep hinlink tmp/.packageinfo` 为空，
+   `make defconfig` 把 `CONFIG_PACKAGE_u-boot-hinlink-h68k-rk3568` 丢掉了。
+   ⚠️ 改完 `uboot-rockchip/Makefile` 后必须 `rm -f tmp/.packageinfo tmp/.targetinfo`
+   再 `make defconfig`，否则用的是旧 metadata、看起来像改动没生效。
+3. **换 u-boot 时撤掉旧条目** —— 早先为借用 sige3 曾把我们的设备名写进
+   `U-Boot/sige3-rk3568` 的 `BUILD_DEVICES`，改回正规条目后忘了撤，
+   结果 defconfig 又把 sige3 带回来。
 
-### 我们各机型用哪个 u-boot
+以上三件事分别落在两个 patch 里：
 
-| 机型 | DEVICE_DTS | UBOOT_DEVICE_NAME |
-|---|---|---|
-| `hinlink_opc-h66k` | `rk3568-hinlink-h66k` | `hinlink-h66k-rk3568` |
-| `hinlink_opc-h68k-a` / `-a-usb` / `-c` / `-c-usb3` / `-d` / `-d-usb` / `-new` | `rk3568-hinlink-h68k-*` | `hinlink-h68k-rk3568` |
-| `hinlink_opc-h69k` / `hinlink_opc-h69k-mini` | `rk3568-hinlink-h69k-*` | `hinlink-h68k-rk3568` |
-| `hinlink_h28k_rk3528` | `rk3528-hinlink-h28k` | `hinlink-h28k-rk3528` |
-| `hinlink_h29k-*` / `hinlink_opc-ht2_rk3528` / `hinlink_opc-h89k_rk3588` / `hinlink_h88k_v2` | — | **不写 u-boot**（上游无对应 defconfig，维持 `BOOT_FLOW :=` 空） |
+| patch | 作用 |
+|---|---|
+| `patches-uboot/0001-...register-hinlink-devices.patch` | 给 `uboot-rockchip/Makefile` 加 8 个 `U-Boot/hinlink-*` 条目 + 8 行 `UBOOT_TARGETS` |
+| `patches-uboot/108-...add-hinlink-h29k-ht2.patch` | H29K / HT2 的板级 dts + overlay + defconfig |
+| `patches-uboot/109-...add-hinlink-rk3588-uboot.patch` | RK3588 三款的板级 dts + overlay + defconfig |
 
-> H69K 与 H68K 共用同一块 PCB（DTS 都 include `rk3568-hinlink-opc.dtsi`），
-> u-boot 阶段只用到 DDR / 存储 / 串口，故沿用 `hinlink-h68k-rk3568`。
-> H29K / HT2 / H88K / H89K 上游没有对应 u-boot 条目，若需要可参照同 SoC 的
-> `hinlink-h28k-rk3528` / `hinlink-h68k-rk3568` 新增，但须先确认 DDR 与 PMIC。
+### 本仓库自建的两批
+
+#### 108 —— H29K / HT2（RK3528）
+
+u-boot 里只有 H28K 的板级 dts。逐项核对三款机型的内核 dts 后确认，
+**U-Boot 关心的部分完全一致**，据此为 H29K / HT2 补了各自的板级 dts：
+
+| 项 | H28K | H29K | HT2 |
+|---|---|---|---|
+| eMMC | bus-width 8 · vmmc=`vcc_3v3` · vqmmc=`vcc_1v8` · non-removable | 同 | 同 |
+| SD 卡 | bus-width 4 · vmmc=`vcc3v3_sd`(gpio4 **PA1** 低有效) · vqmmc=`vccio_sd`(gpio4 **PB6** 高有效) | 同（引脚一致） | 同（引脚一致） |
+| 调试串口 | `uart0` + `uart0m0_xfer`, 1500000n8 | 同 | 同 |
+| vdd_arm / vdd_logic | pwm1 / pwm2 · 746~1201 mV / 705~1006 mV | 同 | 同 |
+| 网口 | `gmac1` + RGMII PHY(`mdio1` reg 0x1) · reset gpio4 **PC2** 低有效 | 同 | 同 |
+
+三份 dts 都是「只保留 U-Boot 需要的东西」（eMMC / SD / 串口 / 供电 / 网口），
+屏幕、WiFi、红外、5G 模组一律不放 —— 那些 U-Boot 阶段用不到。
+
+#### 109 —— OPC-H88K V2 / V3、OPC-H89K（RK3588）
+
+u-boot 里既没有 hinlink 的 RK3588 板级 dts，也没有 rk806 dtsi，因此另写一份
+**精简的 U-Boot 专用 dts**，只含 eMMC / TF 卡 / 调试串口。
+
+★ 刻意**不含 rk806 PMIC 节点**：RK3588 的 PMIC 由 Rockchip TPL
+（`rk3588_ddr_lp4_2112MHz_lp5_2400MHz_v1.19.bin`）在 SPL 之前就初始化好
+（DDR 需要电压），U-Boot proper 不必再配一遍。少写这 34 路 regulator
+反而更安全 —— 抄错电压会把板子拉坏。**代价**：U-Boot 下读不到 PMIC，
+若日后需要（例如控制某路电源做掉电重启），再按原理图补 rk806 节点。
+
+存储/串口依据（厂商 `vendor-h89k.dtb` 与 `rk3588-hinlink.dtsi` 两侧一致）：
+
+```
+sdhci  eMMC   bus-width 8, non-removable, mmc-hs200-1_8v
+sdmmc  TF 卡  bus-width 4, cd-gpios gpio0 PA4 低有效, no-mmc
+uart2  调试串口 uart2m0_xfer, 1500000n8
+```
+
+defconfig 基于 u-boot 自带的 `generic-rk3588_defconfig`，target 沿用
+`CONFIG_TARGET_EVB_RK3588`（与上游 `generic-rk3588` 的做法一致 ——
+RK3588 需要一个 `CONFIG_TARGET_*` 来提供板级支持代码）。
+
+### ★ 自建 u-boot 时踩到的两个坑
+
+**① `# CONFIG_OF_UPSTREAM is not set` 会让板级 dts 找不到**
+
+照抄 `generic-rk3588_defconfig` 时带上了这一行，结果 u-boot 不再从
+`dts/upstream/src/arm64/rockchip/` 取 dts，而是要求 dts 放在
+`arch/arm/dts/` 并**列进 `arch/arm/dts/Makefile`**。报错是：
+
+```
+make[5]: *** No rule to make target
+         'arch/arm/dts/rockchip/rk3588-hinlink-h88k-v2.dtb', needed by 'dtbs'.  Stop.
+```
+
+⇒ 删掉该行（保持 `OF_UPSTREAM` 默认 y）即可。h28k / sige7 等正常工作的
+defconfig 都没有这行。
+
+**② 手动往 `.config` 加 u-boot 包时，别忘了 `trusted-firmware-a-<soc>`**
+
+只在 `.config` 里加 `CONFIG_PACKAGE_u-boot-hinlink-h28k-rk3528=y` 就直接编译，
+会报：
+
+```
+binman: [Errno 2] No such file or directory:
+  '.../staging_dir/target-aarch64_generic_musl/image/rk3528_ddr_1056MHz_v1.11.bin'
+```
+
+因为 TPL/ATF 由 `trusted-firmware-a-rk3528` 提供（`U-Boot/rk3528/Default` 里
+`DEPENDS:=+PACKAGE_u-boot-$(1):trusted-firmware-a-rk3528`），而手动加包**不会触发
+依赖解析**。要么补上 `CONFIG_PACKAGE_trusted-firmware-a-rk3528=y`，
+要么跑一次 `make defconfig`（但后者会丢掉"当前没选中的设备"的 u-boot 包）。
 
 ### 实测验证（2026-10-09）
 
-在真实 immortalwrt master + u-boot 2026.07 上编译 `hinlink_opc-h68k-c-usb3`：
+在真实 immortalwrt master + u-boot 2026.07 上编译**全部 8 个变体**：
 
 ```
-make package/boot/uboot-rockchip/compile   → UBOOT_EXIT_0
-  build_dir/.../u-boot-hinlink-h68k-rk3568/u-boot-2026.07/configs/
-      hinlink-h28k-rk3528_defconfig  hinlink-h66k-rk3568_defconfig  hinlink-h68k-rk3568_defconfig
-  staging_dir/.../image/hinlink-h68k-rk3568-u-boot-rockchip.bin     9580032 B
+make package/boot/uboot-rockchip/compile   →  EXIT 0
 
-make -j16                                  → BUILD_EXIT_0
-  → sysupgrade.img.gz ×2
+  9373184 B  hinlink-h28k-rk3528-u-boot-rockchip.bin
+  9371648 B  hinlink-h29k-rk3528-u-boot-rockchip.bin
+ 9371648 B  hinlink-ht2-rk3528-u-boot-rockchip.bin
+  9547776 B  hinlink-h66k-rk3568-u-boot-rockchip.bin
+  9580032 B  hinlink-h68k-rk3568-u-boot-rockchip.bin
+  9454080 B  hinlink-h88k-v2-rk3588-u-boot-rockchip.bin
+  9454080 B  hinlink-h88k-v3-rk3588-u-boot-rockchip.bin
+  9454080 B  hinlink-h89k-rk3588-u-boot-rockchip.bin
 ```
 
-**固件内嵌的 u-boot 已确认是 HINLINK 专属的那颗**（解包 sysupgrade.img.gz 后
-在前 32 MB 里直接读到）：
+**固件内嵌的 u-boot 已确认是 HINLINK 专属那颗**（解包 h68k-c-usb3 的
+sysupgrade.img.gz，在前 32 MB 里直接读到）：
 
 ```
 U-Boot 2026.07-ImmortalWrt-r0-305089f (Oct 09 2026 - 02:50:14 +0000)
@@ -665,16 +749,27 @@ compatible: hinlink,h68k
 fdtfile=rockchip/rk3568-hinlink-h68k.dtb
 ```
 
-### 与上一轮「借用 sige3 u-boot」的对比
+> 验证方法（可复用）：
+> ```sh
+> gunzip -c <...-squashfs-sysupgrade.img.gz> > /tmp/fw.img
+> head -c 33554432 /tmp/fw.img | strings -n 6 | grep -iE "U-Boot 20|HINLINK"
+> ```
+> ⚠️ **u-boot 包不进 rootfs**，所以不出现在 `.manifest` 里 ——
+> 它由 `dd if=$(STAGING_DIR_IMAGE)/$(UBOOT_DEVICE_NAME)-u-boot-rockchip.bin`
+> 写进 boot 区。想确认只能解包固件看字符串。
 
-| | 借用 sige3（已废弃） | 用上游 HINLINK（现在） |
-|---|---|---|
-| u-boot 设备树 | sige3 的通用 dts | **HINLINK H68K 专属** `rk3568-hinlink-h68k.dts` |
-| DDR/ATF | 通用 `rk3568_ddr_1560MHz` + `bl31` | 同左（`U-Boot/rk3568/Default`） |
-| 需要改上游包 | 是（塞进 sige3 的 BUILD_DEVICES） | 否（用上游自己的条目） |
-| 风险 | SD 卡全新刷机可能因 PMIC/设备树不符起不来 | 用官方 H68K 设备树，风险最低 |
+### ⚠️ 未实机验证的部分（RK3528 的 h29k/ht2 与 RK3588 三款）
 
-原来那份 `0001-uboot-rockchip-hinlink-reuse-sige3-u-boot.patch` 已删除。
+上游提供的 h28k / h66k / h68k 是厂商与上游验证过的；本仓库自建的 5 个变体
+（h29k / ht2 / h88k-v2 / h88k-v3 / h89k）**只做到「编译产出 bin」，没有上机启动验证**。
+
+- RK3528 的 h29k / ht2：DDR/存储/供电三项都比对过内核 dts（见上表），
+  风险主要在 DDR 颗粒与 U-Boot 的 TPL 是否匹配 —— TPL 是通用件，正常会自适应。
+- RK3588 三款：dts 刻意不含 PMIC，靠 TPL 的默认设置。若无串口输出，
+  优先用 SDK 的 `rkdeveloptool`/maskrom 模式恢复，**不要**直接 dd 覆盖 u-boot 区。
+
+⇒ 建议：**先用 sysupgrade 升级**（不写 u-boot 区，最安全）；
+确需整盘刷写时，先确认该机型的 u-boot 在实机上的串口输出正常。
 
 ---
 
@@ -691,7 +786,8 @@ fdtfile=rockchip/rk3568-hinlink-h68k.dtb
 | 厂商 DTB ↔ 上游 DTS 交叉验证 | ✅ H89K 屏 7 项吻合；H28K / H66K / H68K 网络构成吻合 |
 | dtc 完整编译（走 OpenWrt 真实链路） | ✅ **20/20 PASS**，产出 20 个 `image-*.dtb`（见下） |
 | phandle 交叉引用 | ✅ 由 `tools/check_phandle.py` 覆盖（RK3568 + RK3588 全部通过） |
-| u-boot 编译与打包 | ✅ `UBOOT_EXIT_0`；固件内嵌 **HINLINK H68K 专属 u-boot**（见 §七） |
+| u-boot 全机型覆盖 | ✅ **8 个变体全部编译通过**（RK3528×3 + RK3568×2 + RK3588×3），18 机型无遗漏（见 §七） |
+| u-boot 实机启动 | ❌ 仅 h28k/h66k/h68k 为上游验证；自建 5 个变体未上机 |
 | 整包编译出固件 | ✅ `BUILD_EXIT_0`，`sysupgrade.img.gz` ×2（h68k-c-usb3，含 LuCI + mt7921e） |
 | 实机启动 | ❌ 未验证（无实机） |
 
@@ -804,6 +900,30 @@ H89K 不受影响（直接 include `rk3588.dtsi`，不经过 `rk3588s-ip.dtsi`�
 | 4 | H28K DTS 只使能了 `&pcie` 控制器，**没挂 `pcie-eth` 子节点** | RK3528 的 PCIe 控制器不带网卡节点，不会枚举出 eth1，实际只有 1 个口 |
 | 5 | `h29k-v5-1.49` 的 compatible 在 02_network 写成 `h29k-v5-5-1.49`（DTS 里是 `hinlink,h29k-v5-149`） | 1.49 寸版匹配不到网口映射 |
 | 6 | **误判 H28K 为单网口** —— 把「厂商 dtb 里没有网卡节点」当成「板上没有网卡」，实际 H28K 有 PCIe 千兆口（官网规格表 + 厂商 dtb 里 PCIe 链路完整使能） | H28K 少配一个 WAN 口 |
+| 7 | **H89K 的 DTS 缺 rk806 PMIC / eMMC / TF 卡 / 调试串口** —— 厂商 dtb 里这四样全都有（详见下节） | 该 DTB **无法正常启动**（找不到根文件系统、无串口输出、CPU 供电不受内核控制） |
+
+### ⚠️ 未修：H89K 的 DTS 严重不完整
+
+做 RK3588 的 u-boot 时对比厂商 dtb（`vendor-h89k.dtb`）发现：本仓库的
+`rk3588-hinlink-h89k.dts` 只有 8 个 `&label` 段（`gmac0` / `gmac1` / `mdio0` /
+`pcie2x1l1` / `pcie2x1l2` / `pinctrl` / `pwm3` / `spi4`），
+缺少下面这些**厂商 dtb 里确实存在**的内容：
+
+| 缺什么 | 厂商 dtb 里的证据 |
+|---|---|
+| **rk806 PMIC 整棵树** | `/spi@feb20000/pmic@0` compatible = `rockchip,rk806`，含 dcdc-reg1~10 + pldo-reg1~6 + nldo-reg1~5 + pwrkey + 全部 pinctrl 状态 |
+| **eMMC** | `/mmc@fe2e0000` bus-width 8 · non-removable · mmc-hs200-1_8v · status okay |
+| **TF 卡** | `/mmc@fe2c0000` bus-width 4 · cd-gpios gpio0 PA4 低有效 · no-mmc · status okay |
+| **调试串口** | `/serial@feb50000`（uart2）status okay |
+
+成因：上一轮从厂商 dtb 逆推 H89K 时只挑了外设（网口/PCIe/屏），**漏了电源与存储**。
+
+⇒ 影响：该 DTB 目前无法正常启动 —— 没有 eMMC 就找不到根文件系统，
+没有 uart2 就没有串口日志，没有 rk806 则 CPU/DDR 供电不受内核管理。
+
+**u-boot 侧不受影响**：`patches-uboot/109` 的 RK3588 板级 dts 是独立写的，
+eMMC / TF 卡 / uart2 都按厂商 dtb 的值补上了。**但内核侧的 dts 需要单独修**
+（补 rk806 的 34 路 regulator + 三个存储/串口节点，约 250 行）。
 | 7 | H28K 的 mmc 别名顺序与厂商相反（`mmc0=sdhci` vs 厂商 `mmc0=sdmmc`） | TF 卡插上后固件不识别 |
 
 同时修正了 `check_port_count.py` 自身的 4 个缺陷（否则上面这些根本查不出来）：
