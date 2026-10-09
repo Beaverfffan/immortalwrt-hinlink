@@ -167,23 +167,36 @@ TARGET_DEVICES += hinlink_opc-h68k-new
 
 # ---- H69K：三网口 ----
 
+# ---- H69K：三网口 + 5G + PWM 风扇 ----
+#★ 风扇：pwm0 驱动 pwm-fan，cooling-levels 9 档
+#   （0/33/40/47/53/60/73/80/100%），绑定 cpu_thermal
+#   参数取自 iStoreOS 官方 rk3568-opc-h69k.dts，并与「h69k-fan」LuCI 插件
+#   的 pct_to_state 映射表逐值一致（该插件依赖此9 档划分，不要改）
+#   ⇒ kmod-hwmon-pwmfan 提供 /sys/class/hwmon/hwmonX/pwm1 供用户态读写
+#   ⇒ 可选装 iStoreOS 的「h69k-fan」LuCI 插件做曲线温控（纯用户态，
+#      不依赖本仓库额外 patch）
+# ★ 5G 模组：GPIO0_C0 供电，startup-delay-us = 2 秒（不可调小）
+
 define Device/hinlink_opc-h69k
   $(Device/hinlink_h6xk_sdio_aic8800)
-  DEVICE_MODEL := H69K (三网口, 5G)
+  DEVICE_MODEL := H69K (三网口, 5G, 风扇)
   DEVICE_DTS := rk3568-hinlink-h69k-3eth
   UBOOT_DEVICE_NAME := hinlink-h69k-rk3568
-  DEVICE_PACKAGES += kmod-hwmon-pwmfan kmod-usb-serial-option kmod-r8169
+  DEVICE_PACKAGES += kmod-hwmon-pwmfan kmod-usb-serial-option kmod-r8169 \
+                     kmod-thermal kmod-hwmon-thermal
 endef
 TARGET_DEVICES += hinlink_opc-h69k
 
-# ---- H69K-mini：四网口（= H68K max）----
+# ---- H69K-mini：四网口（= H68K max）+ 5G + PWM 风扇 ----
+# ★ 风扇配置与 H69K 三口版相同
 
 define Device/hinlink_opc-h69k-mini
   $(Device/hinlink_h6xk_sdio_aic8800)
-  DEVICE_MODEL := H69K mini (四网口 = H68K max, 5G)
+  DEVICE_MODEL := H69K mini (四网口 = H68K max, 5G, 风扇)
   DEVICE_DTS := rk3568-hinlink-h69k-mini
   UBOOT_DEVICE_NAME := hinlink-h69k-rk3568
-  DEVICE_PACKAGES += kmod-hwmon-pwmfan kmod-usb-serial-option kmod-r8169
+  DEVICE_PACKAGES += kmod-hwmon-pwmfan kmod-usb-serial-option kmod-r8169 \
+                     kmod-thermal kmod-hwmon-thermal
 endef
 TARGET_DEVICES += hinlink_opc-h69k-mini
 

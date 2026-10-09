@@ -13,7 +13,7 @@
  *   网口 = 1×GMAC(fe1b0000, RGMII) + 2×RTL8125 2.5G (PCIe)
  *         GMAC fe1c0000 在厂商 dtb 里 disabled，本机不用。
  *         PCIe 网卡分别挂在 pcie2x1l1(fe180000) 与 pcie2x1l2(fe190000)，
- *         reset 脚分别是 GPIO2_A0 与 GPIO5_A0。
+ *         reset 脚分别是 GPIO4_A2 与 GPIO4_A5（高有效）。
  *
  *   厂商 02_network 映射：LAN "eth0 eth1" / WAN "eth2"
  *         ⇒ 板载 RGMII 作WAN（GMAC 节点显式 label = "eth2"）
@@ -193,25 +193,43 @@
  *   厂商 dtb 在这两个控制器下各挂一个 pci10ec,8125
  * ============================================================ */
 
+/*
+ * PCIe 网卡 1（pcie2x1l1 / fe180000）
+ * reset = GPIO4_A2，高有效（厂商 dtb 实证）
+ */
 &pcie2x1l1 {
-	reset-gpios = <&gpio2 RK_PA0 GPIO_ACTIVE_LOW>;
+	reset-gpios = <&gpio4 RK_PA2 GPIO_ACTIVE_HIGH>;
 	max-link-speed = <2>;              /* Gen2 = 5 GT/s，厂商原值 */
 	status = "okay";
 
 	pcie2-0 {
 		compatible = "pci10ec,8125";
-		reset-gpios = <&gpio2 RK_PA0 GPIO_ACTIVE_LOW>;
+		reset-gpios = <&gpio4 RK_PA2 GPIO_ACTIVE_HIGH>;
 	};
 };
 
+/*
+ * PCIe 网卡 2（pcie2x1l2 / fe190000）
+ * reset = GPIO4_A5，高有效（厂商 dtb 实证）
+ *
+ * ★ 更正记录：原来写的 `&gpio5 RK_PA0 GPIO_ACTIVE_LOW` 是**错的** ——
+ *   ① RK3588 只有 gpio0..gpio4（6.18 rk3588-base.dtsi 里就这5 个），
+ *     `&gpio5` 会因 phandle 找不到而**编译失败**；
+ *   ② 厂商 dtb 的 GPIO4_A5 是 **ACTIVE_HIGH**，不是低有效。
+ *   厂商 dtb 四路 PCIe 的 reset 全在 GPIO4：
+ *     /pcie@fe180000 (pcie2x1l1) → GPIO4_A2  HIGH
+ *     /pcie@fe190000 (pcie2x1l2) → GPIO4_A5  HIGH
+ *     /pcie@fe150000 (pcie2x1l0) → GPIO4_B6  HIGH   ← WiFi/M.2 位，本机未用
+ *     /pcie@fe170000 (pcie3x4)   → GPIO0_B0  HIGH   ← 本机未用
+ */
 &pcie2x1l2 {
-	reset-gpios = <&gpio5 RK_PA0 GPIO_ACTIVE_LOW>;
+	reset-gpios = <&gpio4 RK_PA5 GPIO_ACTIVE_HIGH>;
 	max-link-speed = <2>;
 	status = "okay";
 
 	pcie2-1 {
 		compatible = "pci10ec,8125";
-		reset-gpios = <&gpio5 RK_PA0 GPIO_ACTIVE_LOW>;
+		reset-gpios = <&gpio4 RK_PA5 GPIO_ACTIVE_HIGH>;
 	};
 };
 

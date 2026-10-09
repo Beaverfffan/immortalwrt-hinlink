@@ -138,13 +138,22 @@
 	};
 };
 
-&rk809 {
-	ext_32k_clk_out: ext-clk-32k-out {
-		rockchip,grf = <&rk809_grf 0>;
-		#clock-cells = <1>;
-		clock-output-rate = <32768>;
-	};
-};
+/*
+ * ★ 原&rk809 { ext_32k_clk_out { rockchip,grf = <&rk809_grf 0>; } } 已删除
+ *
+ *   原因：Linux 6.18 的 rk3568 SoC dtsi 里**没有 rk809 节点，也没有 rk809_grf
+ *   标签**（6.18 已把 SoC 拆分到 rk356x-base.dtsi，RK809 PMIC 不在其中）。
+ *   保留这段会因 phandle 找不到而**编译失败**。
+ *
+ *   佐证：6.18 内核自带的 rk3568-hinlink-h68k.dts（官方蓝本）也没有这段。
+ *   而本仓库的 rk3568-hinlink-opc.dtsi 与 6.18 内核自带的同名文件
+ *   **sha256 完全一致**，说明这份 dtsi 已是上游官方版本 ——
+ *   上游没引用 rk809_grf，说明它确实不需要。
+ *
+ *   这个 32.768kHz 时钟输出是给 RTC 用的；RK3568 板载 RTC 走
+ *   hym8563（I2C），不依赖 RK809。若你的机器确实需要它，
+ *   应改用 `rk809` 相关的正确写法或另找时钟源。
+ */
 
 
 &pinctrl {

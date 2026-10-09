@@ -8,10 +8,14 @@
  * 蓝本：OpenWrt 主线 rk3568-hinlink-h68k.dts
  *
  * 真·69K：装 USB 5G 模组；屏蔽 1 个 GMAC → 1×GMAC + 2×RTL8125 = 3 口
+ *
+ * ★ 风扇：PWM0 → pwm-fan，绑定 cpu_thermal。
+ *   参数取自 iStoreOS 官方 rk3568-opc-h69k.dts。
  */
 
 /dts-v1/;
 
+#include <dt-bindings/thermal/thermal.h>
 #include "rk3568-hinlink-opc.dtsi"
 
 / {
@@ -118,13 +122,22 @@
 	};
 };
 
-&rk809 {
-	ext_32k_clk_out: ext-clk-32k-out {
-		rockchip,grf = <&rk809_grf 0>;
-		#clock-cells = <1>;
-		clock-output-rate = <32768>;
-	};
-};
+/*
+ * ★ 原&rk809 { ext_32k_clk_out { rockchip,grf = <&rk809_grf 0>; } } 已删除
+ *
+ *   原因：Linux 6.18 的 rk3568 SoC dtsi 里**没有 rk809 节点，也没有 rk809_grf
+ *   标签**（6.18 已把 SoC 拆分到 rk356x-base.dtsi，RK809 PMIC 不在其中）。
+ *   保留这段会因 phandle 找不到而**编译失败**。
+ *
+ *   佐证：6.18 内核自带的 rk3568-hinlink-h68k.dts（官方蓝本）也没有这段。
+ *   而本仓库的 rk3568-hinlink-opc.dtsi 与 6.18 内核自带的同名文件
+ *   **sha256 完全一致**，说明这份 dtsi 已是上游官方版本 ——
+ *   上游没引用 rk809_grf，说明它确实不需要。
+ *
+ *   这个 32.768kHz 时钟输出是给 RTC 用的；RK3568 板载 RTC 走
+ *   hym8563（I2C），不依赖 RK809。若你的机器确实需要它，
+ *   应改用 `rk809` 相关的正确写法或另找时钟源。
+ */
 
 
 &pinctrl {
@@ -190,6 +203,103 @@
 		regulator-name = "modem_enable";
 		startup-delay-us = <2000000>;
 		vin-supply = <&vcc5v0_sys>;
+	};
+
+	/*
+	 * ★★ 风扇：PWM0驱动 pwm-fan，绑定 cpu_thermal
+	 *
+	 * 参数全部来自 iStoreOS 官方 rk3568-opc-h69k.dts，
+	 * 并由「h69k-fan」LuCI 插件的 DEVELOPMENT.md 反向验证：
+	 *   「pwm-fan cooling-levels = <0 0x55 0x66 0x77 0x88 0x99 0xbb 0xcc 0xff>
+	 *     —— 即 0/33/40/47/53/60/73/80/100%，
+	 *     与本插件 pct_to_state 的 9 档映射逐值一致」
+	 *
+	 * ★ cooling-levels 的 9 个值不是随便填的，它就是 h69k-fan 插件
+	 *   的 pct_to_state 映射表。改这里会让插件的档位错位。
+	 *
+	 * ★ 风扇绑定在 cpu_thermal（type 串 cpu-thermal），
+	 *   gpu_thermal 没有风扇绑定。
+	 *
+	 * ★ 设备树无 tach 引脚 → 没有 RPM 反馈，界面只能显示占空比。
+	 *
+	 * 风扇档位（9 档，与插件一致）：
+	 *   0%=0   33%=0x55   40%=0x66   47%=0x77   53%=0x88
+	 *   60%=0x99   73%=0xbb   80%=0xcc   100%=0xff
+	 */
+	fan: pwm-fan {
+		compatible = "pwm-fan";
+		cooling-levels = <0 0x55 0x66 0x77 0x88 0x99 0xbb 0xcc 0xff>;
+		#cooling-cells = <2>;
+		fan-supply = <&vcc5v0_sys>;
+		pwms = <&pwm0 0 50000 0>;
+	};
+};
+
+/* 风扇 PWM 通道 */
+&pwm0 {
+	status = "okay";
+};
+
+/*
+ * CPU 温控曲线 —— 挂在 fan 上（fan 在上面 cooling-maps 里绑定）
+ *
+ * iStoreOS 的 active trips（插件 DEVELOPMENT.md 记录的内核默认曲线）：
+ *   65℃ -> 2~4 档    85℃ -> 4~6 档    95℃ -> 6 档以上（满档）
+ *   20℃ passive -> 最低档常转
+ * critical 115℃（插件 raise_trips 上限取 min(105, 115-10)=105℃）
+ *
+ * ⚠️ 内核 rk356x-base.dtsi 原本的 cpu_thermal 只有 passive 的
+ *   cpu_alert0(70℃)/cpu_alert1(75℃) + critical(95℃)，
+ *   且 cooling-map0 绑的是 CPU（CPU_FREQ_INCREASE）不是风扇。
+ *   下面覆盖为风扇曲线 —— 若要保留 CPU 降频，需把两组 cooling-maps 合并。
+ */
+&cpu_thermal {
+	trips {
+		cpu_warm: cpu_warm {
+			temperature = <65000>;
+			hysteresis = <5000>;
+			type = "active";
+		};
+
+		cpu_hot: cpu_hot {
+			temperature = <85000>;
+			hysteresis = <5000>;
+			type = "active";
+		};
+
+		cpu_hall: cpu_hall {
+			temperature = <95000>;
+			hysteresis = <5000>;
+			type = "active";
+		};
+
+		cpu_idle: cpu_idle {
+			temperature = <20000>;
+			hysteresis = <3000>;
+			type = "passive";
+		};
+	};
+
+	cooling-maps {
+		map2 {
+			trip = <&cpu_idle>;
+			cooling-device = <&fan THERMAL_NO_LIMIT 2>;
+		};
+
+		map3 {
+			trip = <&cpu_warm>;
+			cooling-device = <&fan 2 4>;
+		};
+
+		map4 {
+			trip = <&cpu_hot>;
+			cooling-device = <&fan 4 6>;
+		};
+
+		map5 {
+			trip = <&cpu_hall>;
+			cooling-device = <&fan 6 THERMAL_NO_LIMIT>;
+		};
 	};
 };
 

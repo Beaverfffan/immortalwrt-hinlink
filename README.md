@@ -570,7 +570,8 @@ patch -p1 --dry-run < <仓库>/patches/9999-fbtft-read-display-offset-from-dt.pa
 | 口数与板级映射一致 | ✅ **19/19** 机型 OK（RK3568 + RK3528 + RK3588） |
 | 重复机型清理 | ✅ 已合并 `h68k-c-usb` / `h68k-c-usb3`；`c` / `d` 系列经确认**不合并** |
 | 设备定义 ↔ DTS 文件对齐 | ✅ 无孤儿、无缺失 |
-| `compatible` 唯一性 | ✅ 全部唯一 |
+| `compatible` 唯一性 | ✅全部唯一 |
+| phandle 引用可解析 | ✅ **RK3568 / RK3588 全部 13份**；⚠️ RK3528 6 份受限于内核（见上） |
 | 厂商 DTB ↔ 上游 DTS 交叉验证 | ✅ H89K 屏 7 项吻合；H28K / H66K / H68K 网络构成吻合 |
 | dtc 完整编译 | ❌ **未验证** |
 | phandle 交叉引用 | ❌ 未验证 |
@@ -578,6 +579,35 @@ patch -p1 --dry-run < <仓库>/patches/9999-fbtft-read-display-offset-from-dt.pa
 
 > 语法校验用真实内核 6.18 的 include 树跑的：
 > `python3 tools/dts_syntax_check.py <dts> <hinlink目录> <kernel>/include <kernel>/include/dt-bindings/input <kernel>/arch/arm64/boot/dts <kernel>/arch/arm64/boot/dts/rockchip`
+
+### ⚠️ RK3528 的 USB / PCIe 控制器在内核 6.18 里缺失
+
+`tools/check_phandle.py` 报出 6 份 RK3528 DTS 引用了无法解析的标签：
+
+| 标签 | 用途 | 6.18 是否有定义 |
+|---|---|---|
+| `usb2phy` / `usb2phy_host` / `usb2phy_otg` | USB2 PHY | ❌ 无 |
+| `pcie` | PCIe 控制器 | ❌ 无 |
+| `usbdrd30` / `usbdrd_dwc3` | USB3 双角色控制器 | ❌ 无 |
+
+**核查结论**：这是**内核 RK3528 支持不完整**，不是本仓库的问题。
+6.18 的 `arch/arm64/boot/dts/rockchip/rk3528.dtsi`（31751 B，1178 行）里
+只有 `gmac0` / `gmac1` / `combphy`（phy@ffdc0000）等节点，
+**没有 pcie 与 usb2phy 控制器**；6.18 自带的 5 份 RK3528 官方板级 DTS
+（`rk3528-nanopi-zero2.dts`、`rk3528-rock-2a.dts` 等）也**都没有**使能它们。
+
+另查到 RK3528 是 Linux **6.14** 才引入的（6.10 / 6.12 的
+`arch/arm64/boot/dts/rockchip/` 下没有该 SoC）。
+immortalwrt `openwrt-24.10` 的 `KERNEL_PATCHVER` 是 **6.6** ——
+也就是说 RK3528 要用 ≥6.14 的内核才有料。
+
+⇒ **本仓库 6 份 RK3528 DTS（h28k / h29k×4 / ht2）在 6.18 上会因
+phandle 找不到而编译失败**，需要：
+- 用 **≥ 6.14** 的内核（6.6 与 6.12 都没有 RK3528，6.14 起才有）；且
+- 确认所用内核的 `rk3528.dtsi` 已包含 `pcie` 与 `usb2phy` 节点。
+
+这 6 份 DTS 的其余内容（gmac / combphy / sdio / pwm / 屏/ 5G 模组 IO）
+已按厂商 dtb 核对无误，**只要内核补齐这两个控制器即可编译**。
 
 ### ⚠️ 2 份 DTS 存在版本错配（H88K，非本轮引入）
 
@@ -705,6 +735,7 @@ dmesg | grep -iE "gmac|ethernet|phy|combphy|saradc|pcie"
 |---|---|
 | `tools/check_port_count.py` | **口数自检**：交叉校验 DTS 网口构成与 `02_network` 映射 |
 | `tools/dup_scan.py` | **去重扫描**：找出硬件配置完全相同的 DTS，并自动比对两者的 `02_network` 映射 |
+| `tools/check_phandle.py` | **phandle 校验**：找出 `&label` 引用了不存在的标签（编译阻塞类问题） |
 | `tools/dts_syntax_check.py` | 离线 DTS 结构校验（括号平衡、include 完整性） |
 | `tools/fdtdump.py` | **DTB 反解析**：把厂商 dtb 的节点/属性 dump 成可读文本，查证硬件参数 |
 | `tools/gen_hinlink.py` | RK3568 机型 DTS 生成器 |

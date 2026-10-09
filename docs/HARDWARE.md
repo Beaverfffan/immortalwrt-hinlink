@@ -69,11 +69,76 @@ y-offset-0  = <40>;   /* rotate 0/180  时 y += 40 */
 
 | 机型 | 风扇 PWM | 温控 cooling-maps | 状态 |
 |---|---|---|---|
-| **H69K / H69K-mini** | — | — | ⚠️ **缺**（iStoreOS 有） |
-| H89K | `pwm3`（febf0020）| — | ⚠️ **只有 PWM，无 pwm-fan 节点** |
+| **H69K / H69K-mini** | **pwm0 → pwm-fan** | ✅✅ 4 档 | ✅ **已移植**（见下） |
+| H89K | `pwm3`（febf0020）| — | ⚠️ 只有 PWM，无 pwm-fan 节点 |
 | H88K v2/v3 | — | — | ✅ 无风扇（厂商无） |
 | H66K / H68K 系列 | — | — | ✅ 无风扇（厂商无） |
 | H28K / H29K / HT2 | pwm1/pwm2 作 **vdd_cpu/vdd_logic 调压** | — | ✅ 非风扇用途 |
+
+### H69K / H69K-mini 的风扇配置（已移植）
+
+参数来自 iStoreOS 官方 `rk3568-opc-h69k.dts`，并由「h69k-fan」LuCI 插件的
+`DEVELOPMENT.md` 反向验证：
+
+```dts
+fan: pwm-fan {
+    compatible = "pwm-fan";
+    cooling-levels = <0 0x55 0x66 0x77 0x88 0x99 0xbb 0xcc 0xff>;
+    #cooling-cells = <2>;
+    fan-supply = <&vcc5v0_sys>;
+    pwms = <&pwm0 0 50000 0>;
+};
+&pwm0 { status = "okay"; };
+```
+
+**9 档转速**（与插件的 `pct_to_state` 映射表**逐值一致**，改动会让插件档位错位）：
+
+| 档 | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
+|---|---|---|---|---|---|---|---|---|---|
+| 占空比 | 0% | 33% | 40% | 47% | 53% | 60% | 73% | 80% | 100% |
+| 值 | 0 | 0x55 | 0x66 | 0x77 | 0x88 | 0x99 | 0xbb | 0xcc | 0xff |
+
+**温控曲线**（`&cpu_thermal` 的 cooling-maps 绑到 fan）：
+
+| 温度 | 类型 | 风扇档位 |
+|---|---|---|
+| 20℃ | passive | 最低档常转（`THERMAL_NO_LIMIT`~2） |
+| 65℃ | active | 2 ~ 4 |
+| 85℃ | active | 4 ~ 6 |
+| 95℃ | active | 6 ~ 满档 |
+| — | critical | 115℃（内核默认，本仓库未改） |
+
+⚠️ 内核 `rk356x-base.dtsi` 原本的 `cpu_thermal` 只有 passive 的
+`cpu_alert0(70℃)` / `cpu_alert1(75℃)` + `critical(95℃)`，且 cooling-map0
+绑的是 **CPU**（CPU_FREQ_INCREASE）不是风扇。本仓库覆盖为风扇曲线 ——
+**这意味着放弃了内核的 CPU 降频策略**。若要两者兼得，需把两组
+cooling-maps 合并（CPU 降频 + 风扇调速）。
+
+⚠️ **设备树无 tach 引脚** → 没有 RPM 反馈，界面只能显示占空比。
+
+### 可选：iStoreOS「h69k-fan」LuCI 插件
+
+用户提供的 `iStoreOS_H69K风扇插件编译 已冻结.zip` 是**纯用户态**方案
+（`/usr/libexec/h69k-fan` 是 POSIX shell 脚本，23849 B），**不需要任何内核 patch**。
+
+它的工作方式：
+
+1. **接管**：把 `cpu_thermal` 的 `mode` 写成 `disabled`，
+   并把绑定风扇的 trip 温度抬到 `min(105, critical-10)`，
+   阻止内核 thermal governor 跟用户态守护争抢 PWM
+2. **探测**：遍历 `/sys/class/hwmon/hwmon*/pwm1`（pwm-fan 驱动）
+   或 `/sys/class/thermal/cooling_device*/cur_state`（内核 thermal 框架）
+3. **调速**：5 档曲线（40/50/60/70/80℃ → 25/35/50/75/100%）+ 迟滞 2℃
+   + 低温踢转（0% → 100% 持续 1 秒防停转）
+4. **释放**：`release` 时先满速交接，再还原 mode 与 trips
+
+本仓库的 DTS 提供了它所需的 `pwm-fan` 节点，
+所以**装上这个插件即可用**，无需改动内核。
+
+配置项在 `/etc/config/h69k-fan`：`enabled` / `mode`(auto|manual) /
+`t1..t5` / `s1..s5` / `hysteresis` / `kickstart` / `interval` / `zone`。
+
+⚠️ 插件默认 `enabled '0'`，需在 LuCI「系统 → 风扇控制」里启用并保存。
 
 ### ★ 已知缺口：H69K 缺风扇配置
 
@@ -263,11 +328,12 @@ DTS 里的 `leds` 节点给出引脚，`01_leds` 补netdev / heartbeat 触发规
 
 | # | 项目 | 机型 | 说明 |
 |---|---|---|---|
-| 1 | **风扇配置** | H69K / H69K-mini | iStoreOS 有完整 `pwm-fan` + 温控，本仓库未移植。需厂商 dtb 确认 PWM 通道后再加 |
-| 2 | **风扇配置** | H89K | pwm3 已使能但无 `pwm-fan` 节点，风扇不会自动调速 |
-| 3 | **1.49" 屏偏移** | H29K v5 1.49" | 原厂未提供偏移 patch，172×320 的偏移量未知 |
-| 4 | **H89K 屏偏移** | H89K | 40/52 是从 H29K 1.14" 推断的，需实机确认画面完整 |
-| 5 | **H89K 背光** | H89K | 厂商 dtb 里无背光节点（屏可能常亮），未配置 |
-| 6 | **rfkill** | H69K / H89K | 无软关机节点，是否需要待定 |
-| 7 | **WiFi 代际** | H68K a 系列 | AP6256（brcmfmac）vs AIC8800（aic8800s）驱动不通用 |
-| 8 | **M.2 WiFi** | H68K c/d / H88K | 无预置驱动，插模组后需按实际芯片补包 |
+| 1 | **风扇配置** | H89K | pwm3 已使能但无 `pwm-fan` 节点，风扇不会自动调速 |
+| 2 | **1.49" 屏偏移** | H29K v5 1.49" | 原厂未提供偏移 patch，172×320 的偏移量未知 |
+| 3 | **H89K 屏偏移** | H89K | 40/52 是从 H29K 1.14" 推断的，需实机确认画面完整 |
+| 4 | **H89K 背光** | H89K | 厂商 dtb 里无背光节点（屏可能常亮），未配置 |
+| 5 | **rfkill** | H69K / H89K | 无软关机节点，是否需要待定 |
+| 6 | **WiFi 代际** | H68K a 系列 | AP6256（brcmfmac）vs AIC8800（aic8800s）驱动不通用 |
+| 7 | **M.2 WiFi** | H68K c/d / H88K | 无预置驱动，插模组后需按实际芯片补包 |
+| 8 | **CPU 降频** | H69K / H69K-mini | 风扇 cooling-maps 覆盖了内核原有的 CPU_FREQ 映射，需合并才能兼得 |
+| 9 | **风扇实测** | H69K / H69K-mini | 9 档 duty 与 4 档温度曲线均取自 iStoreOS，未上机验证转速与噪音 |
