@@ -104,8 +104,41 @@ hinlink,opc-h69k|\
 hinlink,opc-h69k-mini|\
 hinlink,h68k|\
 hinlink,h66k|\
-hinlink,h28k)
+hinlink,h28k|\
+linkstar,h28k|\
+hinlink,opc-h29k|\
+hinlink,opc-h29k-battery|\
+hinlink,opc-ht2|\
+hinlink,h88k-v2|\
+hinlink,h88k-v3)
 		wan_mac=$(macaddr_generate_from_mmc_cid mmcblk0)
 		lan_mac=$(macaddr_add "$wan_mac" 1)
 		;;
 esac
+
+# ---- RK3528 机型 ----
+
+hinlink,opc-h28k|\
+	linkstar,h28k)
+		# H28K：PCIe RTL8111HS 为eth0，板载 RGMII 为 eth1
+		ucidef_set_interfaces_lan_wan 'eth0' 'eth1'
+		;;
+
+hinlink,opc-h29k|\
+	hinlink,opc-h29k-battery)
+		# H29K：板载 RGMII 为 eth0，PCIe 为 eth1
+		ucidef_set_interfaces_lan_wan 'eth1' 'eth0'
+		;;
+
+hinlink,opc-ht2)
+		# HT2：板载 RGMII 为 eth0，PCIe 为 eth1
+		ucidef_set_interfaces_lan_wan 'eth0' 'eth1'
+		;;
+
+# ---- RK3588 机型 ----
+
+hinlink,h88k-v2|\
+	hinlink,h88k-v3)
+		# H88K：1×RGMII + 2×PCIe，WAN 走 RGMII
+		ucidef_set_interfaces_lan_wan 'eth1 eth2 eth3' 'eth0'
+		;;

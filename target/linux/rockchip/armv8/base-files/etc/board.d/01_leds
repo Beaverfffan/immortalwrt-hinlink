@@ -105,3 +105,28 @@ hinlink,h28k
 	*)
 		;;
 esac
+
+# ---- RK3528 机型 ----
+
+hinlink,opc-h28k|\
+	linkstar,h28k)
+		ucidef_set_led_netdev "wan" "WAN" "blue:wan" "eth1"
+		ucidef_set_led_netdev "lan" "LAN" "amber:lan" "eth0"
+		;;
+
+hinlink,opc-h29k|\
+	hinlink,opc-h29k-battery)
+		ucidef_set_led_default "work" "WORK" "green:work" "1"
+		;;
+
+hinlink,opc-ht2)
+		ucidef_set_led_netdev "lan" "LAN" "amber:lan" "eth0"
+		;;
+
+# ---- RK3588 机型 ----
+
+hinlink,h88k-v2|\
+	hinlink,h88k-v3)
+		ucidef_set_led_netdev "wan" "WAN" "blue:net" "eth0"
+		ucidef_set_led_ide "disk" "DISK" "yellow:disk"
+		;;

@@ -171,3 +171,68 @@ define Device/hinlink_opc-h69k-mini
 endef
 
 TARGET_DEVICES += hinlink_opc-h69k-mini
+
+# ===== RK3528 机型 =====
+
+define Device/hinlink_h28k_rk3528
+  $(Device/rk3528)
+  DEVICE_VENDOR := HINLINK
+  DEVICE_MODEL := OPC-H28K
+  DEVICE_ALT0_VENDOR := LinkStar
+  DEVICE_ALT0_MODEL := H28K
+  DEVICE_DTS := rk3528-hinlink-h28k
+  UBOOT_DEVICE_NAME := hinlink-h28k-rk3528
+  DEVICE_PACKAGES := kmod-r8169
+endef
+TARGET_DEVICES += hinlink_h28k_rk3528
+
+define Device/hinlink_opc-h29k_rk3528
+  $(Device/rk3528)
+  DEVICE_VENDOR := HINLINK
+  DEVICE_MODEL := OPC-H29K
+  DEVICE_DTS := rk3528-hinlink-h29k
+  UBOOT_DEVICE_NAME := hinlink-h29k-rk3528
+  DEVICE_PACKAGES := kmod-aic8800s kmod-fb-tft-st7789v kmod-r8169
+endef
+TARGET_DEVICES += hinlink_opc-h29k_rk3528
+
+define Device/hinlink_opc-h29k-battery_rk3528
+  $(Device/hinlink_opc-h29k_rk3528)
+  DEVICE_MODEL += " (battery)"
+  DEVICE_DTS := rk3528-hinlink-h29k-battery
+  UBOOT_DEVICE_NAME := hinlink-h29k-battery-rk3528
+  DEVICE_PACKAGES += kmod-power-supply
+endef
+TARGET_DEVICES += hinlink_opc-h29k-battery_rk3528
+
+define Device/hinlink_opc-ht2_rk3528
+  $(Device/rk3528)
+  DEVICE_VENDOR := HINLINK
+  DEVICE_MODEL := OPC-HT2
+  DEVICE_DTS := rk3528-hinlink-ht2
+  UBOOT_DEVICE_NAME := hinlink-ht2-rk3528
+  DEVICE_PACKAGES := kmod-aic8800s kmod-r8169
+endef
+TARGET_DEVICES += hinlink_opc-ht2_rk3528
+
+# ===== RK3588 机型 =====
+
+define Device/hinlink_h88k_v2
+  $(Device/rk3588)
+  DEVICE_VENDOR := HINLINK
+  DEVICE_MODEL := OPC-H88K V2
+  DEVICE_ALT0_VENDOR := LinkStar
+  DEVICE_ALT0_MODEL := H88K
+  DEVICE_DTS := rk3588-hinlink-h88k-v2
+  UBOOT_DEVICE_NAME := hinlink-h88k-rk3588
+  DEVICE_PACKAGES := kmod-r8169 kmod-nvme
+endef
+TARGET_DEVICES += hinlink_h88k_v2
+
+define Device/hinlink_h88k_v3
+  $(Device/hinlink_h88k_v2)
+  DEVICE_MODEL := OPC-H88K V3
+  DEVICE_DTS := rk3588-hinlink-h88k-v3
+  DEVICE_PACKAGES += kmod-fb-tft-st7789v
+endef
+TARGET_DEVICES += hinlink_h88k_v3

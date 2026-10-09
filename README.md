@@ -256,3 +256,119 @@ make -j$(nproc)
 
 2022 a-b dtb 有 `hym8563@51`（i2c1，irq gpio1_C4）。
 本方案已包含。若某批次无此芯片，需删掉。
+---
+
+## RK3528 / RK3588 机型（第二批）
+
+### 机型矩阵
+
+| # | 机型 | SoC | DTS | compatible | 网口 | 板载无线 |
+|---|---|---|---|---|---|---|
+| 8 | **H28K** | RK3528 | `rk3528-hinlink-h28k.dts` | `hinlink,h28k` | RGMII + PCIe RTL8111HS | 无（主线已支持） |
+| 9 | **H29K** | RK3528 | `rk3528-hinlink-h29k.dts` | `hinlink,opc-h29k` | RGMII | SDIO（SDR104） |
+| 10 | **H29K 电池版** | RK3528 | `rk3528-hinlink-h29k-battery.dts` | `hinlink,opc-h29k-battery` | 同上 | 同上 |
+| 11 | **HT2** | RK3528 | `rk3528-hinlink-ht2.dts` | `hinlink,opc-ht2` | RGMII | SDIO（SDR50） |
+| 12 | **H88K V2** | RK3588 | `rk3588-hinlink-h88k-v2.dts` | `hinlink,h88k-v2` | 1×RGMII + 2×PCIe | M.2 |
+| 13 | **H88K V3** | RK3588 | `rk3588-hinlink-h88k-v3.dts` | `hinlink,h88k-v3` | 1×RGMII + 2×PCIe | M.2 |
+
+### 网口映射（写死）
+
+| 机型 | LAN | WAN |
+|---|---|---|
+| H28K | eth0 | eth1 |
+| H29K / 电池版 | eth1 | eth0 |
+| HT2 | eth0 | eth1 |
+| H88K V2/V3 | eth1 eth2 eth3 | eth0 |
+
+### 与第一批的关键差异
+
+**第一批（RK3568）是我手写 DTS；第二批直接复用已验证源码。**
+
+第一版我手写 RK3528 DTS，犯了两个错：
+1. 引用了 `&gmac1_rstn_l`（PHY 复位 pinctrl）但**没定义**它
+2. 缺 `&sdmmc` / `&sdhci` / `&uart` / `&usb` 等基础节点，还留了一堆死 label
+
+**判据教训**：手写设备树时最容易漏的是「被引用但未定义」—— 语法检查器查不出这种
+交叉引用错误（它只查括号与 include）。**复用已验证的源码比手写可靠得多。**
+
+因此第二批的来源：
+- H28K → OpenWrt 主线 `rk3528-hinlink-h28k.dts` 原版
+- H29K / 电池版 / HT2 → coolsnowwolf/lede 的 `rk3528-opc-h29k.dts` / `rk3528-opc-ht2.dts`，**只改头部注释**
+- H88K V2/V3 → istoreos 的 `rk3588-h88k-v2.dts` / `-v3.dts`，**只改头部注释**
+
+### ★ H88K 必须连带移植 iStoreOS 私有 dtsi
+
+H88K 依赖 `rk3588-hinlink.dtsi`（15970 B，iStoreOS 私有，immortalwrt 6.18 内核中没有），
+它又引用同目录下 5 个私有 dtsi：
+
+```
+rk3588-hinlink.dtsi          15970 B   ← 主dtsi
+rk3588-rk806-single.dtsi      8333 B
+rk3588s-ip.dtsi                592 B
+rk3588s-ip-supply.dtsi         575 B
+rk3588-hdmirx.dtsi             443 B
+rk3588-ramoops.dtsi            290 B
+```
+
+这 6 个文件**已包含在本仓库**，来源：
+<https://github.com/istoreos/istoreos> `target/linux/rockchip/dts/rk3588/`
+
+`rk3588.dtsi` 本身用内核自带版本即可（166 B，只 include rk3588-extra.dtsi + rk3588-opp.dtsi）。
+
+### RK3528 硬件要点
+
+**H29K 与 HT2 的差异**（同为主线/lede 同一批板）：
+
+| 项 | H29K | HT2 |
+|---|---|---|
+| SDIO 最高速率 | SDR104 | SDR50 |
+| LED | 4G(red, gpio4 PC0) + 5G(blue, PC3) + work(green, PB7) | LAN(amber, PC0) + work(green, PB7) |
+| rfkill | 有（gpio1 PB0，控制 4G/5G 模组） | 无 |
+| SPI 屏 | 有（st7789v，spi1） | 无 |
+| I2C1 | 启用 | 未启用 |
+
+**WiFi 引脚**（两机相同）：
+```
+SDIO复位 = GPIO1_A6 低有效
+host-wake = GPIO1_A7 高电平触发
+上电延时 = 100 ms，断电延时 = 5 s
+```
+
+**板载 RGMII**（两机相同）：`phy-mode = "rgmii-id"`，PHY 复位 gpio4 PC2，
+`snps,reset-delays-us = <0 20000 100000>`。
+
+### H29K 电池版本：待实机确认
+
+DTS 里只有占位段，**没有填任何 GPIO**。需要确认：
+
+```sh
+ls /sys/bus/i2c/devices/
+dmesg | grep -iE "bq27|bq25|max17|chg|charg|battery"
+cat /sys/class/power_supply/*/uevent
+```
+
+拿到电量计芯片型号与 I2C 地址后再补节点。**在拿到数据前不猜GPIO —— 填错会导致
+充电异常甚至损坏电池。**
+
+### RK3588 硬件要点（H88K）
+
+**v2 vs v3 的差异**：
+
+| 项 | V2 | V3 |
+|---|---|---|
+| 存储 | `combphy0_ps` + `sata0` | `combphy0_ps` + `pcie2x1l2`（RTL8125 2.5G） |
+| 屏 | 无 | `&spi4` + ST7789V |
+| 3.3V 供电 | `vcc3v3_m2_sata`（gpio4 PA4） | `vcc3v3_sd`（gpio4 PA4，同引脚不同用途） |
+| 网口枚举顺序 | 默认 | `eth_order = "0004:*1:00.0,0003:*1:00.0,fe1b0000.ethernet"` |
+
+v3 的 `eth_order` 是作者为解决枚举顺序不稳定而显式加的，移植时不要删。
+
+### 验证状态
+
+| 项目 | 状态 |
+|---|---|
+| DTS 语法结构 | ✅ 6/6 PASS |
+| 对照组校准 | ✅ lede 原版 + iStoreOS 原版 + 主线 H28K 均 PASS |
+| dtc 完整编译 | ❌ 未验证（同第一批，环境问题） |
+| phandle 交叉引用 | ❌ 未验证 —— **这正是第一版手写时出问题的地方，建议在 buildroot 里 `make target/compile` 实测** |
+| 实机启动 | ❌ 未验证 |
