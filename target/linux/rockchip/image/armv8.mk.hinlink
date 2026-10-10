@@ -1,6 +1,68 @@
 
 # ===== HinLink 全机型（每机型独立，不做自适应） =====
 
+# =====================================================================
+# ★ 通用包集：LuCI + **全部可能的无线网卡驱动** + 风扇驱动
+# =====================================================================
+# 用户要求：编译全部机型时，默认带上 luci、所有可能的无线网卡驱动、风扇驱动。
+#
+# 「无线网卡」按三类总线穷举（本系列机器同时具备 M.2/PCIe、SDIO、USB）：
+#
+#   M.2 / PCIe 位： MediaTek mt7921e(mt7921/7922) / mt7925e / mt7915e / mt7615e
+#                  Realtek rtw88(8821ce/8822be/8822ce) / rtw89(8851be/8852ae/
+#                  8852be/8852ce/8922ae)
+#   SDIO 板载：    MediaTek mt7921s / mt7663s / Realtek rtw88-8822cs
+#                  Aicsemi  aic8800-sdio（H68K new / H69K / H29K / HT2 原厂）
+#                  Broadcom brcmfmac + 43455/43456 固件（H68K a 系列 AP6256）
+#   USB 口：       mt7921u / mt7663u / mt76x0u / mt76x2u / mt7601u
+#                  rtw88-8821cu/8822bu/8822cu/8821au、rtw89-8852bu
+#                  rtl8xxxu、rt2800-usb、rtl8188eu(EU)、aic8800-usb / -pcie
+#
+# 「无线」也含 5G/4G 模组的网卡驱动：
+#                  kmod-usb-net-qmi-wwan / cdc-mbim / usb-serial-option /
+#                  usb-serial-qualcomm / usb-modeswitch
+#
+# 「风扇」：kmod-hwmon-pwmfan（H69K 的 pwm-fan）+ kmod-hwmon-gpiofan +
+#          kmod-thermal / kmod-hwmon-core + fancontrol + luci-app-fancontrol
+#          （immortalwrt luci feed 自带，纯用户态，读 /sys/class/hwmon）
+#
+# ⚠️ 以上包名均已用 `make prepare-tmpinfo` 生成的 tmp/.config-package.in
+#    逐个核对过「是否有可见配置符号」，不存在/被 hide 的名字一律不入表。
+#    （历史上 kmod-aic8800s / kmod-fb-tft-* / kmod-spi-spidev /
+#      kmod-iio-adc-rk3528 / kmod-power-supply / kmod-hwmon-thermal 全是
+#      写错的名字，一次都没编译通过过 —— 之前只编了 h68k-c-usb3 才没暴露。）
+# =====================================================================
+define Device/hinlink_common
+  # --- LuCI ---
+  DEVICE_PACKAGES += luci luci-ssl luci-app-package-manager \
+	luci-i18n-base-zh-cn luci-proto-ipv6 luci-proto-ppp \
+	luci-mod-network luci-mod-status luci-mod-system luci-theme-bootstrap \
+	wpad-basic-mbedtls
+  # --- 无线网卡：M.2 / PCIe ---
+  DEVICE_PACKAGES += kmod-mt7921e kmod-mt7925e kmod-mt7915e kmod-mt7615e \
+	kmod-rtw88-8821ce kmod-rtw88-8822be kmod-rtw88-8822ce \
+	kmod-rtw89-8851be kmod-rtw89-8852ae kmod-rtw89-8852be \
+	kmod-rtw89-8852ce kmod-rtw89-8922ae
+  # --- 无线网卡：SDIO 板载 ---
+  DEVICE_PACKAGES += kmod-mt7921s kmod-mt7663s kmod-rtw88-8822cs \
+	kmod-aic8800-sdio \
+	cypress-firmware-43455-sdio brcmfmac-nvram-43455-sdio \
+	brcmfmac-firmware-43456-sdio brcmfmac-nvram-43456-sdio
+  # --- 无线网卡：USB ---
+  DEVICE_PACKAGES += kmod-mt7921u kmod-mt7663u kmod-mt76x0u kmod-mt76x2u \
+	kmod-mt7601u kmod-rtw88-8821cu kmod-rtw88-8822bu kmod-rtw88-8822cu \
+	kmod-rtw88-8821au kmod-rtw89-8852bu kmod-rtl8xxxu kmod-rt2800-usb \
+	kmod-rtl8188eu kmod-aic8800-usb kmod-aic8800-pcie
+  # --- 无线广域网：5G / 4G 模组 ---
+  DEVICE_PACKAGES += kmod-usb-net-qmi-wwan kmod-usb-net-cdc-mbim \
+	kmod-usb-serial-option kmod-usb-serial-qualcomm usb-modeswitch
+  # --- 风扇 ---
+  DEVICE_PACKAGES += kmod-hwmon-core kmod-thermal kmod-hwmon-pwmfan \
+	kmod-hwmon-gpiofan fancontrol luci-app-fancontrol \
+	luci-i18n-fancontrol-zh-cn
+endef
+
+
 
 define Device/hinlink_h6xk_base
 
@@ -30,7 +92,7 @@ define Device/hinlink_h6xk_sdio_aic8800
 
   $(Device/hinlink_h6xk_base)
 
-  DEVICE_PACKAGES += kmod-aic8800s
+  DEVICE_PACKAGES += kmod-aic8800-sdio
 
 endef
 
@@ -41,7 +103,7 @@ define Device/hinlink_h6xk_sdio_ap6256
 
   $(Device/hinlink_h6xk_base)
 
-  DEVICE_PACKAGES += kmod-brcmfmac kmod-firmware-brcm80211
+  DEVICE_PACKAGES += kmod-brcmfmac cypress-firmware-43455-sdio brcmfmac-nvram-43455-sdio
 
 endef
 
@@ -92,6 +154,8 @@ define Device/hinlink_opc-h66k
   #   ⇒ make defconfig 会自动带上 CONFIG_PACKAGE_u-boot-hinlink-h66k-rk3568=y。
   UBOOT_DEVICE_NAME := hinlink-h66k-rk3568
   DEVICE_PACKAGES := kmod-r8169 kmod-ata-ahci-dwc
+  # ★ 通用包集（LuCI + 全无线网卡驱动 + 风扇驱动）
+  $(Device/hinlink_common)
 endef
 TARGET_DEVICES += hinlink_opc-h66k
 
@@ -114,6 +178,8 @@ define Device/hinlink_opc-h68k-a
   #   ⇒ make defconfig 会自动带上 CONFIG_PACKAGE_u-boot-hinlink-h68k-rk3568=y。
   UBOOT_DEVICE_NAME := hinlink-h68k-rk3568
   DEVICE_PACKAGES += kmod-ata-ahci-dwc
+  # ★ 通用包集（LuCI + 全无线网卡驱动 + 风扇驱动）
+  $(Device/hinlink_common)
 endef
 TARGET_DEVICES += hinlink_opc-h68k-a
 
@@ -130,6 +196,8 @@ define Device/hinlink_opc-h68k-a-usb
   #   BUILD_DEVICES 已在我们的 Makefile 补丁里登记本机型，
   #   ⇒ make defconfig 会自动带上 CONFIG_PACKAGE_u-boot-hinlink-h68k-rk3568=y。
   UBOOT_DEVICE_NAME := hinlink-h68k-rk3568
+  # ★ 通用包集（LuCI + 全无线网卡驱动 + 风扇驱动）
+  $(Device/hinlink_common)
 endef
 TARGET_DEVICES += hinlink_opc-h68k-a-usb
 
@@ -149,6 +217,8 @@ define Device/hinlink_opc-h68k-c
   #   ⇒ make defconfig 会自动带上 CONFIG_PACKAGE_u-boot-hinlink-h68k-rk3568=y。
   UBOOT_DEVICE_NAME := hinlink-h68k-rk3568
   DEVICE_PACKAGES += kmod-r8169 kmod-ata-ahci-dwc
+  # ★ 通用包集（LuCI + 全无线网卡驱动 + 风扇驱动）
+  $(Device/hinlink_common)
 endef
 TARGET_DEVICES += hinlink_opc-h68k-c
 
@@ -171,6 +241,8 @@ define Device/hinlink_opc-h68k-c-usb3
   #   ⇒ make defconfig 会自动带上 CONFIG_PACKAGE_u-boot-hinlink-h68k-rk3568=y。
   UBOOT_DEVICE_NAME := hinlink-h68k-rk3568
   DEVICE_PACKAGES += kmod-r8169
+  # ★ 通用包集（LuCI + 全无线网卡驱动 + 风扇驱动）
+  $(Device/hinlink_common)
 endef
 TARGET_DEVICES += hinlink_opc-h68k-c-usb3
 
@@ -190,6 +262,8 @@ define Device/hinlink_opc-h68k-d
   #   ⇒ make defconfig 会自动带上 CONFIG_PACKAGE_u-boot-hinlink-h68k-rk3568=y。
   UBOOT_DEVICE_NAME := hinlink-h68k-rk3568
   DEVICE_PACKAGES += kmod-r8169 kmod-ata-ahci-dwc
+  # ★ 通用包集（LuCI + 全无线网卡驱动 + 风扇驱动）
+  $(Device/hinlink_common)
 endef
 TARGET_DEVICES += hinlink_opc-h68k-d
 
@@ -207,6 +281,8 @@ define Device/hinlink_opc-h68k-d-usb
   #   ⇒ make defconfig 会自动带上 CONFIG_PACKAGE_u-boot-hinlink-h68k-rk3568=y。
   UBOOT_DEVICE_NAME := hinlink-h68k-rk3568
   DEVICE_PACKAGES += kmod-r8169
+  # ★ 通用包集（LuCI + 全无线网卡驱动 + 风扇驱动）
+  $(Device/hinlink_common)
 endef
 TARGET_DEVICES += hinlink_opc-h68k-d-usb
 
@@ -226,6 +302,8 @@ define Device/hinlink_opc-h68k-new
   #   ⇒ make defconfig 会自动带上 CONFIG_PACKAGE_u-boot-hinlink-h68k-rk3568=y。
   UBOOT_DEVICE_NAME := hinlink-h68k-rk3568
   DEVICE_PACKAGES += kmod-r8169 kmod-ata-ahci-dwc
+  # ★ 通用包集（LuCI + 全无线网卡驱动 + 风扇驱动）
+  $(Device/hinlink_common)
 endef
 TARGET_DEVICES += hinlink_opc-h68k-new
 
@@ -254,8 +332,9 @@ define Device/hinlink_opc-h69k
   #   BUILD_DEVICES 已在我们的 Makefile 补丁里登记本机型，
   #   ⇒ make defconfig 会自动带上 CONFIG_PACKAGE_u-boot-hinlink-h68k-rk3568=y。
   UBOOT_DEVICE_NAME := hinlink-h68k-rk3568
-  DEVICE_PACKAGES += kmod-hwmon-pwmfan kmod-usb-serial-option kmod-r8169 \
-                     kmod-thermal kmod-hwmon-thermal
+  DEVICE_PACKAGES += kmod-r8169
+  # ★ 通用包集（LuCI + 全无线网卡驱动 + 风扇驱动）
+  $(Device/hinlink_common)
 endef
 TARGET_DEVICES += hinlink_opc-h69k
 
@@ -275,8 +354,9 @@ define Device/hinlink_opc-h69k-mini
   #   BUILD_DEVICES 已在我们的 Makefile 补丁里登记本机型，
   #   ⇒ make defconfig 会自动带上 CONFIG_PACKAGE_u-boot-hinlink-h68k-rk3568=y。
   UBOOT_DEVICE_NAME := hinlink-h68k-rk3568
-  DEVICE_PACKAGES += kmod-hwmon-pwmfan kmod-usb-serial-option kmod-r8169 \
-                     kmod-thermal kmod-hwmon-thermal
+  DEVICE_PACKAGES += kmod-r8169
+  # ★ 通用包集（LuCI + 全无线网卡驱动 + 风扇驱动）
+  $(Device/hinlink_common)
 endef
 TARGET_DEVICES += hinlink_opc-h69k-mini
 
@@ -307,6 +387,8 @@ define Device/hinlink_h28k_rk3528
   #   明确禁用 SDIO（RK3528 的 WiFi 走 sdio0），故不带任何无线驱动。
   # ★ 存储：板载 8G eMMC + TF 卡槽（厂商 dtb：mmc1=eMMC / mmc0=TF卡）
   DEVICE_PACKAGES += kmod-r8169
+  # ★ 通用包集（LuCI + 全无线网卡驱动 + 风扇驱动）
+  $(Device/hinlink_common)
 endef
 TARGET_DEVICES += hinlink_h28k_rk3528
 
@@ -354,14 +436,17 @@ define Device/hinlink_h29k-v1.3-1.14_rk3528
   #   BUILD_DEVICES 已在我们的 Makefile 补丁里登记本机型，
   #   ⇒ make defconfig 会自动带上 CONFIG_PACKAGE_u-boot-hinlink-h29k-rk3528=y。
   UBOOT_DEVICE_NAME := hinlink-h29k-rk3528
-  DEVICE_PACKAGES := kmod-aic8800s kmod-fb-tft-st7789v kmod-r8169
+  DEVICE_PACKAGES := kmod-aic8800-sdio kmod-r8169
+  # ★ 通用包集（LuCI + 全无线网卡驱动 + 风扇驱动）
+  $(Device/hinlink_common)
 endef
 TARGET_DEVICES += hinlink_h29k-v1.3-1.14_rk3528
 
 # --- v5 目标 ---
 # 硬件要点：WiFi AIC8800(sdio0) / 屏 ST7789V 135x240 rot90 / GPIO 恒亮背光
 #   ★ 有电池电压 ADC(saradc ch1) —— 6.18 上游已原生支持 rk3528-saradc，
-#     只需 kmod-iio-adc-rk3528 让用户态能读，不需要任何 patch
+#     且本 target 的 config-6.18 里 CONFIG_ROCKCHIP_SARADC=y（内建），
+#     用户态直接读 /sys/bus/iio/devices 即可，不需要任何 patch 或包
 #   ★ 有红外接收(gpio4_PC6)、有 uart2(5G 串口)
 #   ★ 5G 模组不独立控制供电（与 v1.3 的 GPIO4_B5 不同）
 #   屏偏移由 patches/9999-fbtft-read-display-offset-from-dt.patch 从 DT 读
@@ -380,8 +465,9 @@ define Device/hinlink_h29k-v5-1.14_rk3528
   #   BUILD_DEVICES 已在我们的 Makefile 补丁里登记本机型，
   #   ⇒ make defconfig 会自动带上 CONFIG_PACKAGE_u-boot-hinlink-h29k-rk3528=y。
   UBOOT_DEVICE_NAME := hinlink-h29k-rk3528
-  DEVICE_PACKAGES := kmod-aic8800s kmod-fb-tft-st7789v kmod-r8169 \
-                     kmod-iio-adc-rk3528 kmod-power-supply
+  DEVICE_PACKAGES := kmod-aic8800-sdio kmod-r8169
+  # ★ 通用包集（LuCI + 全无线网卡驱动 + 风扇驱动）
+  $(Device/hinlink_common)
 endef
 TARGET_DEVICES += hinlink_h29k-v5-1.14_rk3528
 
@@ -404,9 +490,9 @@ define Device/hinlink_h29k-v5-1.49_rk3528
   #   BUILD_DEVICES 已在我们的 Makefile 补丁里登记本机型，
   #   ⇒ make defconfig 会自动带上 CONFIG_PACKAGE_u-boot-hinlink-h29k-rk3528=y。
   UBOOT_DEVICE_NAME := hinlink-h29k-rk3528
-  DEVICE_PACKAGES := kmod-aic8800s kmod-fb-tft-gc9307 kmod-r8169 \
-                     kmod-iio-adc-rk3528 kmod-power-supply \
-                     kmod-input-chipone-axs5106 kmod-i2c-chipone-axs5106
+  DEVICE_PACKAGES := kmod-aic8800-sdio kmod-r8169
+  # ★ 通用包集（LuCI + 全无线网卡驱动 + 风扇驱动）
+  $(Device/hinlink_common)
 endef
 TARGET_DEVICES += hinlink_h29k-v5-1.49_rk3528
 
@@ -425,7 +511,9 @@ define Device/hinlink_opc-ht2_rk3528
   #   BUILD_DEVICES 已在我们的 Makefile 补丁里登记本机型，
   #   ⇒ make defconfig 会自动带上 CONFIG_PACKAGE_u-boot-hinlink-ht2-rk3528=y。
   UBOOT_DEVICE_NAME := hinlink-ht2-rk3528
-  DEVICE_PACKAGES := kmod-aic8800s kmod-r8169
+  DEVICE_PACKAGES := kmod-aic8800-sdio kmod-r8169
+  # ★ 通用包集（LuCI + 全无线网卡驱动 + 风扇驱动）
+  $(Device/hinlink_common)
 endef
 TARGET_DEVICES += hinlink_opc-ht2_rk3528
 
@@ -445,7 +533,8 @@ TARGET_DEVICES += hinlink_opc-ht2_rk3528
 # ★ 不含板载 WiFi（用 M.2）
 #   5G 模组：4G/5G 供电 GPIO4_A3 + 复位 GPIO4_C6
 #   屏：ST7789V 135x240 rot90 @SPI4 m2（厂商 dtb + 上游 unifreq PR#19 双重实证）
-#     —— kmod-fb-tft-st7789v 提供驱动；
+#     —— fbtft 的 fb_st7789v 驱动本 target 已**内建**
+#        （config-6.18 里 CONFIG_FB_TFT_ST7789V=y，见 armv8 的 config 追加段）；
 #     显示偏移由 patches/9999-fbtft-read-display-offset-from-dt.patch
 #     从 DT 读取（本 DTS 的 panel 节点已写 x-offset=40 / y-offset=52，
 #     值为 H29K 1.14" 同尺寸面板的偏移量，属推断，需实机确认）。
@@ -466,9 +555,9 @@ define Device/hinlink_opc-h89k_rk3588
   #   BUILD_DEVICES 已在我们的 Makefile 补丁里登记本机型，
   #   ⇒ make defconfig 会自动带上 CONFIG_PACKAGE_u-boot-hinlink-h89k-rk3588=y。
   UBOOT_DEVICE_NAME := hinlink-h89k-rk3588
-  DEVICE_PACKAGES := kmod-r8169 kmod-mt7921e wpad-basic-mbedtls \
-                     kmod-hwmon-pwmfan kmod-usb-serial-option \
-                     kmod-fb-tft-st7789v
+  DEVICE_PACKAGES := kmod-r8169
+  # ★ 通用包集（LuCI + 全无线网卡驱动 + 风扇驱动）
+  $(Device/hinlink_common)
 endef
 TARGET_DEVICES += hinlink_opc-h89k_rk3588
 
@@ -490,6 +579,8 @@ define Device/hinlink_h88k_v2
   #   ⇒ make defconfig 会自动带上 CONFIG_PACKAGE_u-boot-hinlink-h88k-v2-rk3588=y。
   UBOOT_DEVICE_NAME := hinlink-h88k-v2-rk3588
   DEVICE_PACKAGES := kmod-r8169 kmod-nvme
+  # ★ 通用包集（LuCI + 全无线网卡驱动 + 风扇驱动）
+  $(Device/hinlink_common)
 endef
 TARGET_DEVICES += hinlink_h88k_v2
 
@@ -504,8 +595,10 @@ define Device/hinlink_h88k_v3
   #   DTS 里只有 spidev@0，没有 width/height/rotate 等 fbtft 屏参数，
   #   所以装 fbtft 驱动也没用 —— 屏参数与画面要靠用户态工具加载。
   #   若想改成 fbtft 方案，需在本 DTS 的 spidev@0 旁补 panel 节点
-  #   （sitronix,st7789v + 135x240 + rotate + x/y-offset），
-  #   并改用 kmod-fb-tft-st7789v。
-  DEVICE_PACKAGES += kmod-spi-spidev
+  #   （sitronix,st7789v + 135x240 + rotate + x/y-offset）——
+  #   fbtft/fb_st7789v 本 target 已内建，改 DTS 即可生效。
+  # spidev 已内建（CONFIG_SPI_SPIDEV=y），无需额外包
+  # ★ 通用包集（LuCI + 全无线网卡驱动 + 风扇驱动）
+  $(Device/hinlink_common)
 endef
 TARGET_DEVICES += hinlink_h88k_v3

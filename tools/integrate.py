@@ -122,4 +122,21 @@ for f in sorted(glob.glob(os.path.join(SRC, "patches/*.patch"))):
     shutil.copy2(f, os.path.join(pd, b))
     print("  + %s" % b)
 
+print("[5] 追加 target 内核 config（FB / fbtft 内建）")
+app_p = os.path.join(SRC, "target/linux/rockchip/hinlink-config.append")
+if not os.path.exists(app_p):
+    print("  (无 hinlink-config.append，跳过)")
+else:
+    app = rd(app_p)
+    # 先删掉上一次追加的块（幂等），再整体追加
+    strip_re = re.compile(r'\n*# =+ HinLink begin =+\n.*?# =+ HinLink end =+\n',
+                          re.S)
+    done = []
+    for f in sorted(glob.glob(os.path.join(ROCK, "armv8/config-*"))):
+        t = rd(f)
+        t = strip_re.sub("\n", t).rstrip("\n") + "\n\n" + app
+        wr(f, t)
+        done.append(os.path.basename(f))
+    print("  追加到 %s" % (", ".join(done) if done else "(未找到 config-*)"))
+
 print("集成完成")

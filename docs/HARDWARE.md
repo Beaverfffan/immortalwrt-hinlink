@@ -8,14 +8,41 @@
 
 ---
 
+## ★ 0. 默认固件的预置策略（2026-10-10 起）
+
+从这一版起，**所有 18 个机型共用同一套预置包**（`Device/hinlink_common`），
+不再按机型裁剪无线驱动：
+
+* **无线网卡驱动全带上**（M.2/PCIe + SDIO + USB 三条总线穷举）
+  ⇒ 一块固件，插 AP6256 / AIC8800 / 任意 mt76·rtw88·rtw89 模组都能认，
+  不必先知道机器是哪一代。
+* **风扇驱动全带上**：`kmod-hwmon-pwmfan` + `kmod-hwmon-gpiofan` +
+  `kmod-thermal` + `fancontrol` + `luci-app-fancontrol`（含简体中文）
+  ⇒ LuCI「系统 → 风扇控制」直接可调。
+* **fbtft 小屏栈改为内核内建**（`CONFIG_FB_TFT*` = y，含本仓库新增的
+  GC9307 驱动）—— rockchip 上 package 层的 `kmod-fb*` 被
+  `FBDEV_TARGETS` 限制成 bcm27xx/sunxi/x86 专用，拿不到。
+* 5G/4G 模组的网络侧驱动也预置：`qmi-wwan` / `cdc-mbim` /
+  `usb-serial-option` / `usb-serial-qualcomm` / `usb-modeswitch`。
+
+详细包清单与踩坑见 `README.md §4.12`。
+
+---
+
+---
+
 ## 一、屏幕
 
 ### 驱动方式分两类
 
 | 类型 | 机型 | 驱动 | 说明 |
 |---|---|---|---|
-| **fbtft**（内核驱动） | H29K 全系（1.14" / 1.49"）、H89K | `kmod-fb-tft-st7789v` / `kmod-fb-tft-gc9307` | 屏节点写 `compatible = "sitronix,xxx"` + `width`/`height`/`rotate` |
-| **spidev + 用户态** | H88K v3 | `kmod-spi-spidev` + `kmsd`/`fb_ili9341` 类工具 | iStoreOS 的做法，DTS 里只有 `spidev@0`，**不带屏参数** |
+| **fbtft**（内核**内建** =y） | H29K 全系（1.14" / 1.49"）、H89K | `fb_st7789v` / `fb_gc9307` | 屏节点写 `compatible = "sitronix,xxx"` + `width`/`height`/`rotate` |
+| **spidev + 用户态** | H88K v3 | `CONFIG_SPI_SPIDEV=y`（内建）+ `kmsd`/`fb_ili9341` 类工具 | iStoreOS 的做法，DTS 里只有 `spidev@0`，**不带屏参数** |
+
+⚠️ `fb_gc9307` 是**本仓库新增**的驱动（`patches/9530-fbtft-add-gc9307-driver.patch`）：
+主线 6.18 的 `drivers/staging/fbtft/` 里 grep `gc9307` 零命中，只有 `fb_st7789v.c`。
+H29K v5 1.49" 原厂用的就是 GC9307，所以此前这块屏**无驱动可用**。
 
 ⚠️ **这个差异很重要**：H88K v3 的屏在 DTS 里**没有** `width`/`height`/`rotate`，
 所以它**用不到** fbtft 的偏移 patch。刷 H88K v3 时不要装 fbtft 的包。
@@ -140,37 +167,26 @@ cooling-maps 合并（CPU 降频 + 风扇调速）。
 
 ⚠️ 插件默认 `enabled '0'`，需在 LuCI「系统 → 风扇控制」里启用并保存。
 
-### ★ 已知缺口：H69K 缺风扇配置
+### H69K / H69K-mini 的风扇：已移植（2026-10-09 起）
 
-iStoreOS `rk3568-opc-h69k.dts` 里有完整的风扇实现，本仓库**没有移植**：
+上面的 `fan: pwm-fan` + `&cpu_thermal cooling-maps` 已经写进
+`rk3568-hinlink-opc.dtsi`（H69K / H69K-mini 共用），**不再是缺口**。
+参数取自 iStoreOS 官方 `rk3568-opc-h69k.dts`，并由用户提供的
+「iStoreOS_H69K风扇插件编译 已冻结.zip」里 `DEVELOPMENT.md` 的
+`pct_to_state` 映射表**逐值反验**（9 档 duty 完全一致）。
 
-```dts
-fan: pwm-fan {
-    compatible = "pwm-fan";
-    cooling-levels = <0 0x55 0x66 0x77 0x88 0x99 0xbb 0xcc 0xff>;
-    #cooling-cells = <2>;
-    fan-supply = <&vcc5v0_sys>;
-    pwms = <&pwm0 0 50000 0>;
-};
+固件侧自 2026-10-10 起默认预置：
 
-&pwm0 { status = "okay"; };
+| 包 | 作用 |
+|---|---|
+| `kmod-hwmon-pwmfan` | 提供 `/sys/class/hwmon/hwmonX/pwm1`（用户态可读写） |
+| `kmod-thermal` / `kmod-hwmon-core` | 内核 thermal 框架与 hwmon 基类 |
+| `fancontrol` | 通用 PWM 风扇守护脚本 |
+| `luci-app-fancontrol` + `luci-i18n-fancontrol-zh-cn` | LuCI「系统 → 风扇控制」界面 |
 
-&cpu_thermal {
-    trips { cpu_warm(65℃) / cpu_hot(85℃) / cpu_hall(95℃) / cpu_idle(20℃) };
-    cooling-maps {
-        map2: idle  -> <&fan THERMAL_NO_LIMIT 2>;   /* 低温常转最低速 */
-        map3: warm  -> <&fan 2 4>;
-        map4: hot   -> <&fan 4 6>;
-        map5: hall  -> <&fan 6 THERMAL_NO_LIMIT>;   /* 高温全速 */
-    };
-};
-```
-
-**未移植的原因**：H69K 的 PWM 编号与风扇存在与否，需要厂商 dtb 确认。
-H69K 的厂商 dtb 尚未提取（本仓库只有 h68k / h28k / h29k / h89k 的厂商 dtb）。
-**在拿到厂商 dtb 前不擅自添加** —— 猜错PWM 通道会导致 CPU 无风扇或风扇乱转。
-
-⇒ 已列入README 的「需实机确认」。
+⚠️ 若改用 iStoreOS 的「h69k-fan」插件，它会**接管** `cpu_thermal`
+（把 mode 写成 disabled、抬 trip 温度），与内核 thermal governor 互斥 ——
+两者选一个即可。
 
 ### H89K 的 pwm3 只接了 PWM 未接风扇
 
@@ -187,13 +203,13 @@ H69K 的厂商 dtb 尚未提取（本仓库只有 h68k / h28k / h29k / h89k 的�
 | 机型 | WiFi 模组 | 控制器 | pwrseq | enable | host-wake | 驱动包 |
 |---|---|---|---|---|---|---|
 | **H28K** | **无** | — | — | — | — | — |
-| H29K v1.3 | AIC8800 | `sdio0` | ✅ | ✅ | ✅ | `kmod-aic8800s` |
-| H29K v5 (1.14") | AIC8800 | `sdio0` | ✅ | ✅ | ✅ | `kmod-aic8800s` |
-| H29K v5 (1.49") | AIC8800 | `sdio0` | ✅ | ✅ | ✅ | `kmod-aic8800s` |
-| HT2 | AIC8800 | `sdio0` | ✅ | ✅ | ✅ | `kmod-aic8800s` |
+| H29K v1.3 | AIC8800 | `sdio0` | ✅ | ✅ | ✅ | `kmod-aic8800-sdio` |
+| H29K v5 (1.14") | AIC8800 | `sdio0` | ✅ | ✅ | ✅ | `kmod-aic8800-sdio` |
+| H29K v5 (1.49") | AIC8800 | `sdio0` | ✅ | ✅ | ✅ | `kmod-aic8800-sdio` |
+| HT2 | AIC8800 | `sdio0` | ✅ | ✅ | ✅ | `kmod-aic8800-sdio` |
 | H68K a / a-usb | **AP6256** | `sdio0`? | ✅ | ✅ | — | 见下 |
-| H68K new | **AIC8800** | `sdio0` | ✅ | ✅ | — | `kmod-aic8800s` |
-| H69K / H69K-mini | AIC8800 | `sdio0` | ✅ | ✅ | — | `kmod-aic8800s` |
+| H68K new | **AIC8800** | `sdio0` | ✅ | ✅ | — | `kmod-aic8800-sdio` |
+| H69K / H69K-mini | AIC8800 | `sdio0` | ✅ | ✅ | — | `kmod-aic8800-sdio` |
 | **H68K c / c-usb3 / d / d-usb** | M.2 位 | — | ❌ | ❌ | ❌ | 无 |
 | H66K | — | — | ❌ | ❌ | ❌ | 无 |
 | H88K v2/v3 | M.2 位 | — | ❌ | ❌ | ❌ | 无 |
@@ -208,19 +224,20 @@ H69K 的厂商 dtb 尚未提取（本仓库只有 h68k / h28k / h29k / h89k 的�
 
 这4 个变体（c / c-usb3 / d / d-usb）的 DTS 里**完全没有 sdio 节点**。
 README 的机型表把它们记为「M.2」—— 意思是 WiFi 走 M.2 扩展位，需要用户
-自行插模组。因此**不预置 WiFi 驱动**，插上模组后按实际芯片补包
-（AP6256 用 `kmod-brcmfmac-ap6256`，AIC8800 用 `kmod-aic8800s`）。
+自行插模组。**2026-10-10 起改为全系预置**所有可能的无线网卡驱动（M.2/PCIe + SDIO + USB 一起带上），
+（AP6256 用 `kmod-brcmfmac`，AIC8800 用 `kmod-aic8800-sdio`）。**2026-10-10 起这些驱动已全部预置在固件里，无需再补。**
 
 ### AP6256 vs AIC8800 的代际差异
 
 | | 老机器（2022–2023） | 新机器（2023末–2024） |
 |---|---|---|
 | 模组 | **AP6256**（Broadcom） | **AIC8800** |
-| 驱动 | `kmod-brcmfmac-ap6256` | `kmod-aic8800s`（需额外固件） |
+| 驱动 | `kmod-brcmfmac` + 43455 固件/nvram | `kmod-aic8800-sdio`（自带固件） |
 | 型号 | a / a-usb | c 系列外的新板、new、h69k 系 |
 
-⚠️ AP6256 用 brcmfmac 驱动，AIC8800 用 aic8800s 驱动，**不通用**。
-刷机前必须确认自己机器是哪一代，否则 WiFi 不工作。
+⚠️ AP6256 用 brcmfmac 驱动，AIC8800 用 aic8800-sdio 驱动，**驱动不通用**。
+但自 2026-10-10 起两种驱动（以及 mt76 / rtw88 / rtw89 全家）都预置在固件里，
+所以**刷同一块固件即可**，不必先确认自己机器是哪一代。
 
 ---
 
@@ -321,6 +338,7 @@ DTS 里的 `leds` 节点给出引脚，`01_leds` 补netdev / heartbeat 触发规
 | `9999-fbtft-read-display-offset-from-dt.patch` | 从 DT 读显示偏移 | H29K 1.14" / H89K 必需 |
 | ~~`9527-...-iio-add-adc.patch`~~ | ~~加 rk3528 SARADC 驱动~~ | ❌ **已删除** —— 6.18 上游已原生支持 |
 | `9528-linux-delfbcon-cursor.patch` | 禁 framebuffer 硬件光标 | 建议（SPI 小屏上光标会显示异常） |
+| `9530-fbtft-add-gc9307-driver.patch` | **新增 GC9307 fbtft 驱动**（主线没有）+ Kconfig/Makefile 条目 | H29K v5 1.49" 必需 |
 
 ---
 
@@ -333,7 +351,9 @@ DTS 里的 `leds` 节点给出引脚，`01_leds` 补netdev / heartbeat 触发规
 | 3 | **H89K 屏偏移** | H89K | 40/52 是从 H29K 1.14" 推断的，需实机确认画面完整 |
 | 4 | **H89K 背光** | H89K | 厂商 dtb 里无背光节点（屏可能常亮），未配置 |
 | 5 | **rfkill** | H69K / H89K | 无软关机节点，是否需要待定 |
-| 6 | **WiFi 代际** | H68K a 系列 | AP6256（brcmfmac）vs AIC8800（aic8800s）驱动不通用 |
-| 7 | **M.2 WiFi** | H68K c/d / H88K | 无预置驱动，插模组后需按实际芯片补包 |
+| 6 | ~~**WiFi 代际**~~ | ~~H68K a 系列~~ | ✅ **已解决**：2026-10-10 起固件全系预置 brcmfmac + aic8800 + mt76/rtw88/rtw89 所有驱动 |
+| 7 | ~~**M.2 WiFi**~~ | ~~H68K c/d / H88K~~ | ✅ **已解决**：同上，M.2/PCIe 侧 mt7921e/mt7925e/mt7915e/mt7615e/rtw88/rtw89 全部预置 |
 | 8 | **CPU 降频** | H69K / H69K-mini | 风扇 cooling-maps 覆盖了内核原有的 CPU_FREQ 映射，需合并才能兼得 |
 | 9 | **风扇实测** | H69K / H69K-mini | 9 档 duty 与 4 档温度曲线均取自 iStoreOS，未上机验证转速与噪音 |
+| 10 | **AXS5106 触控** | H29K v5 1.49" | 主线无 `chipone,axs5106` 驱动（连 fbtft 的 gc9307 都是本仓库新加的），触控暂不可用 |
+| 11 | **GC9307 初始化** | H29K v5 1.49" | `fb_gc9307` 由 `fb_st7789v.c` 派生、init 序列沿用 ST7789V，172×320 实际显示需实机确认 |

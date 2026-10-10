@@ -645,6 +645,140 @@ u-boot: 8 个变体条目 + UBOOT_TARGETS 齐全；defconfig 自动选中
 
 ---
 
+### 4.12 ★ 2026-10-10 全 18 机型固件编译（LuCI + 全部无线网卡驱动 + 风扇）
+
+用户要求：**编译全部机型固件，默认带上 LuCI、所有可能的无线网卡驱动、风扇驱动。**
+
+#### 一、先修「从来没编译通过过」的包名
+
+上一轮只编了 `h68k-c-usb3` 一个机型，所以 `armv8.mk.hinlink` 里大量
+**不存在的包名**一直没暴露。逐个用 `make prepare-tmpinfo` 产出的
+`tmp/.config-package.in`（13340 个真实包名）核对后：
+
+| 原写法 | 问题 | 现在 |
+|---|---|---|
+| `kmod-aic8800s` | 不存在（AIC8800 的实际包名是 `kmod-aic8800-sdio`） | `kmod-aic8800-sdio` |
+| `kmod-firmware-brcm80211` | 不存在 | `cypress-firmware-43455-sdio` + `brcmfmac-nvram-43455-sdio`（AP6256=BCM43455） |
+| `kmod-fb-tft-st7789v` | 不存在 | 改为**内核内建**（见下） |
+| `kmod-fb-tft-gc9307` | 不存在，且主线**没有** gc9307 驱动 | 自建驱动 + 内建 |
+| `kmod-spi-spidev` | 不存在（`CONFIG_SPI_SPIDEV=y` 已内建） | 删除 |
+| `kmod-iio-adc-rk3528` | 不存在（`CONFIG_ROCKCHIP_SARADC=y` 已内建） | 删除 |
+| `kmod-power-supply` | 不存在（`CONFIG_POWER_SUPPLY=y` 已内建） | 删除 |
+| `kmod-hwmon-thermal` | 不存在（`CONFIG_THERMAL_HWMON=y` 已内建） | 删除 |
+| `kmod-input/i2c-chipone-axs5106` | 不存在，主线无 AXS5106 触控驱动 | 删除（1.49 寸触控待补驱动） |
+
+#### 二、通用包集 `Device/hinlink_common`
+
+`target/linux/rockchip/image/armv8.mk.hinlink` 顶部新增该模板，18 个机型
+**全部**在 `endef` 前挂 `$(Device/hinlink_common)`，共 59 个包：
+
+* **LuCI**：`luci luci-ssl luci-app-package-manager luci-i18n-base-zh-cn
+  luci-proto-ipv6 luci-proto-ppp luci-mod-{network,status,system}
+  luci-theme-bootstrap wpad-basic-mbedtls`
+* **无线网卡(M.2/PCIe)**：`mt7921e`(MT7921/7922) `mt7925e` `mt7915e` `mt7615e`
+  `rtw88-{8821ce,8822be,8822ce}` `rtw89-{8851be,8852ae,8852be,8852ce,8922ae}`
+* **无线网卡(SDIO)**：`mt7921s` `mt7663s` `rtw88-8822cs` `aic8800-sdio`
+  `cypress-firmware-43455-sdio` `brcmfmac-nvram-43455/43456-sdio`
+  `brcmfmac-firmware-43456-sdio`
+* **无线网卡(USB)**：`mt7921u` `mt7663u` `mt76x0u` `mt76x2u` `mt7601u`
+  `rtw88-{8821cu,8822bu,8822cu,8821au}` `rtw89-8852bu` `rtl8xxxu`
+  `rt2800-usb` `rtl8188eu` `aic8800-{usb,pcie}`
+* **5G/4G 模组**：`usb-net-qmi-wwan` `usb-net-cdc-mbim`
+  `usb-serial-option` `usb-serial-qualcomm` `usb-modeswitch`
+* **风扇**：`kmod-hwmon-core` `kmod-thermal` `kmod-hwmon-pwmfan`
+  `kmod-hwmon-gpiofan` `fancontrol` `luci-app-fancontrol`
+  `luci-i18n-fancontrol-zh-cn`
+
+⇒ 一块固件插任何一代模块都能认（AP6256 / AIC8800 / M.2 任意 mt76·rtw88·rtw89），
+风扇在 LuCI「系统 → 风扇控制」里直接可调。
+
+#### 三、fbtft 小屏栈改为**内核内建**（rockchip 上 package 层拿不到）
+
+实证：`package/kernel/linux/modules/video.mk` 把整条 FB 栈限制成
+
+```
+FBDEV_TARGETS := @(TARGET_bcm27xx||TARGET_sunxi||TARGET_x86_legacy||TARGET_x86_geode)
+```
+
+⇒ **rockchip 上 `kmod-fb` / `kmod-fb-sys-*` / `kmod-fb-tft` 根本不存在**，
+所以 `kmod-fb-tft-st7789v` 这类包名永远编不出来。
+
+改为在 target config 里内建（`target/linux/rockchip/hinlink-config.append`，
+由 `integrate.py` 幂等追加到 `armv8/config-6.18`）：
+
+```
+CONFIG_FB=y / FB_DEVICE / FB_DEFERRED_IO / FB_BACKLIGHT / FB_SYS_* / FB_SYSMEM_FOPS
+CONFIG_FB_TFT=y / FB_TFT_ST7789V=y / FB_TFT_GC9307=y
+CONFIG_FRAMEBUFFER_CONSOLE=y / VT / VT_CONSOLE / FONTS / FONT_8x16
++ 13 个「因开 VT/FB 才首次可见」的符号（CONSOLE_TRANSLATIONS、FONT_* 等）
+```
+
+#### 四、★ 踩坑：新符号会让内核 `syncconfig` 交互提问 → 非交互构建失败
+
+只写 `CONFIG_VT=y` / `CONFIG_FB=y` 是不够的。OpenWrt 的
+`Kernel/Configure` **不会**跑 `oldconfig/olddefconfig`，它只是把
+generic+target 配置合并成 `.config`；紧接着内核 `make modules` 触发
+`syncconfig`，遇到配置里没有、但首次可见的符号就直接交互提问：
+
+```
+    Enable character translations in console (CONSOLE_TRANSLATIONS) [Y/n/?] (NEW)
+make[7]: *** [scripts/kconfig/Makefile:85: syncconfig] Error 1
+```
+
+精确做法（本次采用的）：
+
+```sh
+cd build_dir/.../linux-6.18.55
+cp .config.set /tmp/merged.config && cp /tmp/merged.config .config
+make ARCH=arm64 listnewconfig        # ← 精确列出所有 (NEW) 符号，不提问
+# 一共 13 个，全部写进 hinlink-config.append 即可
+```
+
+另外：**改了 target 内核 config 后，必须删掉内核构建目录**
+（`rm -rf build_dir/target-*/linux-rockchip_armv8/linux-6.18.55`），
+否则残留的 `include/config/auto.conf` 会让 syncconfig 走「Restart config」
+分支，症状同上。
+
+#### 五、多机型同时编译的正确开关
+
+`CONFIG_TARGET_MULTI_PROFILE=y`（**必须写在 `.config` stub 里再 `make defconfig`**），
+机型符号是多选用的 **`CONFIG_TARGET_DEVICE_<board>_<sub>_DEVICE_<机型>`**
+（不是单选 choice 里的 `CONFIG_TARGET_<board>_<sub>_DEVICE_<机型>`，后者是
+`choice` 成员，18 个一起选只有最后一个生效并报
+`warning: override: ... changes choice state`）。
+
+`CONFIG_TARGET_PER_DEVICE_ROOTFS` 选 **n**：所有机型共用一个 rootfs
+（= 所有机型包并集），编译快、且 profile 包在 `.config` 里是 `=y` 而非 `=m`。
+选 y 会变成 per-device rootfs（`=m`），18 份 rootfs 各编一遍，没必要。
+
+⚠️ 修改 `armv8.mk.hinlink` 后必须清缓存再 `defconfig`，否则 profile 元数据
+不会更新（`armv8.mk.hinlink` 不在 `prepare-tmpinfo` 的依赖里）：
+
+```sh
+rm -f tmp/.targetinfo tmp/.config-target.in tmp/.packageinfo tmp/.packagedeps \
+      tmp/.config-package.in tmp/info/.targetinfo-*
+make defconfig
+```
+
+上面的整套流程已脚本化：**`sh tools/build_all.sh`**（可 `sh tools/build_all.sh -j8`），
+它会把 18 个机型写进 stub、清缓存、defconfig、download、编译一条龙跑完。
+
+#### 六、编译结果（2026-10-10，beaver-11800h，内核 6.18.55）
+
+```
+make -j16           →  BUILD_EXIT=0
+18 机型 × (squashfs + ext4) sysupgrade  =  36 个 .img.gz
+每机型 sha256 互不相同 ✅（18/18 唯一）
+场地 sha256sums 复核                      38/38 OK
+rootfs 内实测含 kmod-mt7921e/s /rtw88-*/rtw89-*/aic8800-* /fancontrol 等 ✅
+vmlinux 实测含 fb_st7789v / fb_gc9307 / sitronix,gc9307 / sitronix,st7789v ✅
+（rockchip_saradc 18 个符号；pwm-fan 是模块，在 rootfs 里）
+```
+
+固件清单见 `index.html`（含每机型 sizing 与 sha256）。
+
+---
+
 ## 五、仓库结构
 
 ```
@@ -661,7 +795,7 @@ target/linux/rockchip/
 │   ├── rk3568-hinlink-h69k-3eth.dts          │
 │   ├── rk3568-hinlink-h69k-mini.dts          ┘
 │   ├── rk3568-hinlink-opc.dtsi               RK3568 公共设备树（来自主线）
-│   ├── rk3528-hinlink-h28k.dts               单口（厂商 dtb 实证，无 WiFi）
+│   ├── rk3528-hinlink-h28k.dts               双口（RTL8211F + PCIe RTL8111H，无 WiFi）
 │   ├── rk3528-hinlink-ht2.dts                单口（厂商 dtb 实证）
 │   ├── rk3528-hinlink-h29k.dts               lede 版本（背光有误，仅参考）
 │   ├── rk3528-hinlink-h29k-v1.3-1.14.dts     ┐
@@ -679,9 +813,12 @@ target/linux/rockchip/
 │   ├── 02_network                            网口映射（写死，不探测）
 │   └── 01_leds                               LED 定义
 │
+├── hinlink-config.append                     ★ 追加到 armv8/config-6.18：FB/fbtft 内建段
+│                                             + 13 个 (NEW) 符号（见 §4.12）
 └── image/armv8.mk.hinlink                    设备定义片段（追加到 armv8.mk）
+                                             含 Device/hinlink_common 通用包集
 
-patches/                                      2 份内核 patch（已验证干净应用）
+patches/                                      3 份内核 patch（已验证干净应用）
 patches-uboot/                                ★ U-Boot：上游 patch 存档 + Makefile 改动
 ├── upstream/106-...HINLINK-H66K-H68K.patch   openwrt/main 原文：H66K/H68K u-boot
 ├── upstream/107-...HINLINK-H28K.patch        openwrt/main 原文：H28K u-boot
@@ -713,11 +850,12 @@ H88K 依赖 `rk3588-hinlink.dtsi`（immortalwrt 6.18 内核中没有），它又
 
 ## 六、内核 patch
 
-只有 **2 份** patch，都已验证 `patch -p1` 可干净应用到 Linux 6.18（无 fuzz、无 offset）。
+只有 **3 份** patch，都已验证 `patch -p1` 可干净应用到 Linux 6.18（无 fuzz、无 offset）。
 
 | patch | 用途 | 必需性 |
 |---|---|---|
 | `9999-fbtft-read-display-offset-from-dt.patch` | fbtft 从 DT 读显示偏移（`x-offset` / `y-offset` / `x-offset-0` / `y-offset-0`），替代按机型硬编码的 switch | H29K 1.14" / H89K 必需 |
+| `9530-fbtft-add-gc9307-driver.patch` | **新增 GC9307 fbtft 驱动**（由 `fb_st7789v.c` 派生，compatible 用 `sitronix,gc9307`）+ Kconfig/Makefile 条目 | H29K v5 1.49" 必需（主线无此驱动） |
 | `9528-linux-delfbcon-cursor.patch` | `fb_flashcursor()` / `fbcon_cursor()` 开头 `return`，禁framebuffer 硬件光标 | 建议（SPI 小屏上硬件光标会错位） |
 
 **已删除的 patch**：
