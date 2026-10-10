@@ -2,187 +2,200 @@
 
 # HinLink 机型网络配置
 #
-# 每机型独立分支，映射写死，不做自适应探测。
-# 依据：厂商 2022/2023/2024 固件的 board.d/02_network 原文
+# ★ 本文件的用法：由 tools/integrate.py 把下面 **两个** case 块的内容
+#   按顺序插进官方 02_network 的 rockchip_setup_interfaces() 与
+#   rockchip_setup_macs() 里（各插在官方 `*)` 兜底**之前**）。
+#   所以本文件必须满足：
+#     1. **两个** `case "$board" in` 块，顺序 = 接口映射 → MAC 生成
+#     2. **不要**写 `*)` 兜底（会把官方其他机型吃掉）
+#     3. 不要写 board_config_* / exit 0（官方文件里已有）
+#   本文件同时也是一份**可独立运行**的合法脚本（便于本地校验）。
 #
-# 命名对照（厂商曾用过的 compatible 前缀）：
-#   hinlink,opc-h68k-a / -c      2022 五改型（a-b / c-d / c-d-f / c-usb3）
-#   hinlink,opc-h68k-d            2023.4 推荐版
-#   hinlink,opc-h68k-new          2023末~2024（与 H69K 共底板，不涉及 SATA/USB3 复用）
-#   hinlink,opc-h69k              装 USB 5G 模组的真 69K，**三网口**
-#   hinlink,opc-h69k-mini         **四网口**（= H68K max），不涉及 SATA/USB3 复用
+# 依据：厂商固件 board.d/02_network 原文（fw22 fw1-fw3 / fw23 / fw29new / fw89k）
+#       + 上游 openwrt armv8/base-files/etc/board.d/02_network
 #
-# ★ H28K：板载 RGMII(eth0) + PCIe RTL8111HS(eth1)，**无 WiFi**
-# ★ H29K：屏幕只保留 1.14 寸与 1.49 寸两种变体（1.9 / 2.8 已移除）
+# 网口枚举（immortalwrt 6.18，按 DTS alias 顺序）：
+#   RK3568: gmac0=eth0  gmac1=eth1  pcie3x1(2.5G)=eth2  pcie3x2(2.5G)=eth3
+#   RK3528: gmac1=eth0（单口）
+#   RK3588: gmac0=eth0  pcie2x1l1=eth1  pcie2x1l2=eth2
 #
-# ★ SATA 变体（仅 2022-2023 老机器 a-b / c / d）：
-#   后缀 -sata，combphy0 让给 SATA，USB3.0 不可用。网口映射与基础版相同。
-#
-# 网口枚举前提（immortalwrt 6.18 内核 dtc顺序）：
-#   gmac0     -> eth0   (SoC 内部控制器，顺序固定)
-#   gmac1     -> eth1   (SoC 内部控制器，顺序固定)
-#   rtl8125_1 -> eth2   (PCIe，按 PCI 扫描顺序)
-#   rtl8125_2 -> eth3   (PCIe)
-# ⚠️ 若某机型无 pcie-eth，则不存在 eth2/eth3，下方映射已按实际配置写死。
+# ★ H68K 的 WAN 口位置随固件代次变化（这是厂商自己改的，不是硬件差异）：
+#     2022 固件（fw22）      -a: WAN=eth0        -c: WAN=eth1
+#     2023 固件（fw23）      -a: WAN=eth0        -c/-d/-h69k: WAN=eth0
+#     2025 固件（fw29new）   opc-h68k:           WAN=eth1
+#   本仓库按「机型出货年代」保留差异：-c 用 2022 值（WAN=eth1），
+#   -d / -new 用 2023 值（WAN=eth0）。⚠️ 实机请用 `ip -br a` 确认哪个口是 WAN。
 
+. /lib/functions/uci-defaults.sh
+. /lib/functions/system.sh
 
-case "$board" in
+rockchip_setup_interfaces() {
+	local board="$1"
 
-# ---- H68K A/B：2022 双千兆版，仅 2 个口----
+	case "$board" in
 
-hinlink,opc-h68k-a|\
+	# ======================= RK3568 =======================
+
+	# ---- H68K A/B（2022 双千兆，仅 2 口）----
+	hinlink,opc-h68k-a|\
 	hinlink,opc-h68k-a-usb|\
 	linkstar,opc-h68k-a)
 		ucidef_set_interfaces_lan_wan 'eth1' 'eth0'
 		;;
 
-
-# ---- H68K C/D/F：2022 四网口版，2×RTL8125 ----
-
-hinlink,opc-h68k-c|\
+	# ---- H68K C/D/F（2022 四网口，2×RTL8125）：WAN = eth1 ----
+	hinlink,opc-h68k-c|\
 	hinlink,opc-h68k-c-usb|\
 	hinlink,opc-h68k-c-usb3|\
-	linkstar,opc-h68k-c)
+	linkstar,opc-h68k-c|\
+	hinlink,h68k|\
+	linkstar,h68k)
 		ucidef_set_interfaces_lan_wan 'eth0 eth2 eth3' 'eth1'
 		;;
 
-
-# ---- H68K D：2023.4 推荐版，WAN = eth0（网口全识别）----
-
-hinlink,opc-h68k-d|\
+	# ---- H68K D（2023.4 推荐版）/ H68K new：WAN = eth0 ----
+	hinlink,opc-h68k-d|\
 	hinlink,opc-h68k-d-usb|\
-	linkstar,opc-h68k-d)
+	linkstar,opc-h68k-d|\
+	hinlink,opc-h68k-new)
 		ucidef_set_interfaces_lan_wan 'eth1 eth2 eth3' 'eth0'
 		;;
 
-
-# ---- H68K new：2023末~2024 现行版 ----
-
-hinlink,opc-h68k-new)
-		ucidef_set_interfaces_lan_wan 'eth1 eth2 eth3' 'eth0'
-		;;
-
-
-# ---- H69K：三网口（屏蔽 gmac1，保留 2 路 RTL8125）----
-# eth0 = gmac0（板载 RGMII）；eth2/eth3 = 两路 PCIe 2.5G
-# aliases ethernet0 = &gmac0 => 板载口是 eth0
-
-hinlink,opc-h69k)
+	# ---- H69K（三网口）：板载 = gmac1(eth0)，2×PCIe 2.5G = eth1/eth2 ----
+	hinlink,opc-h69k|\
+	hinlink,h69k)
 		ucidef_set_interfaces_lan_wan 'eth1 eth2' 'eth0'
 		;;
 
-
-# ---- H69K-mini：四网口（= H68K max）----
-# 网络构成 = 2×GMAC(gmac0+gmac1) + 2×RTL8125 2.5G = 4 口
-# 枚举：gmac0->eth0  gmac1->eth1  rtl8125_1->eth2  rtl8125_2->eth3
-# 与 H68K 四网口机型同样式：WAN =板载 gmac0，LAN = 其余三个
-# 差异在形态与 5G 模组，不在网口数量。
-
-hinlink,opc-h69k-mini)
+	# ---- H69K-mini（四网口 = H68K max）----
+	hinlink,opc-h69k-mini)
 		ucidef_set_interfaces_lan_wan 'eth1 eth2 eth3' 'eth0'
 		;;
 
-
-# ---- H66K：无板载网口（两个 GMAC 均 disabled）----
-# 厂商 2024 固件 dtb 实证：gmac0(fe2a0000) 与 gmac1(fe010000) 都 disabled，
-# 且无 mdio/phy@0 子节点。lede 把 h66k 归到 nanopi 组（LAN eth1 / WAN eth0），
-# 但那是按 GMAC 存在的前提。H66K 实际只有 PCIe 2.5G 口：
-#   eth0/eth1 = pcie3x1/pcie3x2 枚举出的 RTL8125
-#   因此按「WAN = 第一个 PCIe 口、其余为 LAN」处理。
-
-hinlink,opc-h66k)
+	# ---- H66K：两个 GMAC 都 disabled（厂商 2024 dtb 实证），
+	#      只有 2 路 PCIe RTL8125 ⇒ eth0/eth1 都是 PCIe 口 ----
+	hinlink,opc-h66k|\
+	hinlink,h66k)
 		ucidef_set_interfaces_lan_wan 'eth1' 'eth0'
 		;;
 
+	# ======================= RK3528 =======================
 
-# ---- H28K：RK3528，双口 ----
-# eth0 = 板载 RGMII(gmac1)，eth1 = PCIe RTL8111HS
-# ⚠️ H28K 无板载 WiFi。
-
-hinlink,opc-h28k|\
+	# ---- H28K：双口 ----
+	#   eth0 = 板载 RTL8211F RGMII 千兆（gmac1）
+	#   eth1 = PCIe RTL8111H 千兆（PCI 枚举产生，DT 里不写网卡节点）
+	hinlink,opc-h28k|\
 	hinlink,h28k|\
 	hlink,h28k|\
-	linkstar,h28k)
-		# H28K：**双网口**
-		#   eth0 = 板载 RTL8211F RGMII 千兆（gmac1）
-		#   eth1 = PCIe RTL8111H 千兆（PCI 枚举产生，非 DT 节点）
-		# 依据：HinLink 官网「网口1 RTL8211F RGMII 千兆 / 网口2 RTL8111H PCIe 千兆」
-		# ⚠️ PCIe 侧网卡不写 pcie-eth 子节点，靠内核 pcie 驱动枚举自动发现，
-		#    所以厂商 dtb 全树没有 pci10ec 节点 —— 那不代表板上没网卡。
+	linkstar,h28k|\
+	linkstar,opc-h28k)
 		ucidef_set_interfaces_lan_wan 'eth0' 'eth1'
 		;;
 
-
-	*)
-		;;
-esac
-
-
-# 从 eMMC CID 生成稳定的 MAC
-case "$board" in
-hinlink,opc-h68k-a|\
-hinlink,opc-h68k-a-usb|\
-hinlink,opc-h68k-c|\
-hinlink,opc-h68k-c-usb|\
-hinlink,opc-h68k-c-usb3|\
-hinlink,opc-h68k-d|\
-hinlink,opc-h68k-d-usb|\
-hinlink,opc-h68k-new|\
-hinlink,opc-h69k|\
-hinlink,opc-h69k-mini|\
-hinlink,h68k|\
-hinlink,opc-h66k|\
-hinlink,opc-h28k|\
-hinlink,h28k|\
-hlink,h28k|\
-linkstar,h28k|\
-hinlink,opc-h29k|\
-hinlink,h29k-v1.3-114|\
-hinlink,h29k-v5-114|\
-hinlink,h29k-v5-149)
-		wan_mac=$(macaddr_generate_from_mmc_cid mmcblk0)
-		lan_mac=$(macaddr_add "$wan_mac" 1)
-		;;
-esac
-
-# ---- RK3528 机型 ----
-
-hinlink,opc-h29k|\
+	# ---- H29K 全系：单口（厂商 dtb 实证 gmac0 disabled、无 PCIe 网卡）----
+	hinlink,opc-h29k|\
+	hinlink,h29k|\
 	hinlink,h29k-v1.3-114|\
+	hinlink,h29k-v1.3-1.14|\
 	hinlink,h29k-v5-114|\
-	hinlink,h29k-v5-149)
-		# H29K 全系（v1.3 / v5，仅 1.14" 与 1.49" 两种屏）：**单网口**
-		# 只有板载 RGMII(gmac1)，DTS 无 PCIe 网卡节点 ⇒ 不会有 eth1。
-		# 厂商 DTS 与上游 unifreq rk3528-hlink-h29k.dts 均为单口（ethernet0=&gmac1）。
+	hinlink,h29k-v5-1.14|\
+	hinlink,h29k-v5-149|\
+	hinlink,h29k-v5-1.49)
 		ucidef_set_interfaces_lan_wan 'eth0'
 		;;
 
-hinlink,opc-ht2)
-		# HT2：**单网口** —— 同 H29K，只有板载 RGMII(gmac1)
+	# ---- HT2：单口（厂商 dtb 实证 gmac1、无 PCIe 网卡）----
+	hinlink,opc-ht2|\
+	hinlink,ht2|\
+	hlink,ht2)
 		ucidef_set_interfaces_lan_wan 'eth0'
 		;;
 
-# ---- RK3588 机型 ----
+	# ======================= RK3588 =======================
 
-hinlink,h88k-v2)
-		# H88K v2：**两网口** —— 板载 gmac0(eth0) + pcie2x1l1 挂的 RTL8125(eth1)
-		# ⚠️ pcie3x4 是 PCIe x4 **插槽位**（上游 dtsi 注释 "H88K v1 & v2: pcie x4 slot"），
-		#    用来插扩展网卡 / NVMe，不是板载网口。
+	# ---- H88K v2：两网口（gmac0=eth0 + pcie2x1l1=eth1）----
+	# pcie3x4 是 PCIe x4 插槽位（插扩展网卡/NVMe），不算板载口
+	hinlink,h88k-v2)
 		ucidef_set_interfaces_lan_wan 'eth1' 'eth0'
 		;;
 
-hinlink,h88k-v3)
-		# H88K v3：**三网口** —— v2 的两口 + pcie2x1l2 第三颗 RTL8125
-		# （v3 上 pcie3x4 改跑 M.2 NVMe）
+	# ---- H88K v3：三网口（v2 两口 + pcie2x1l2 第三颗 RTL8125）----
+	hinlink,h88k-v3)
 		ucidef_set_interfaces_lan_wan 'eth1 eth2' 'eth0'
 		;;
 
-# ---- H89K：RK3588，1×GMAC + 2×RTL8125 = 三口----
-# 厂商固件 02_network 原值：ucidef_set_interfaces_lan_wan "eth0 eth1" "eth2"
-# eth0 = GMAC(板载 RGMII)，eth1/eth2 = 两路 PCIe RTL8125
-# 厂商把 GMAC 标为 WAN（GMAC 节点显式 label = "eth2"）
-# ⚠️ H89K 绝不能并入上面的 h88k 分支 —— 那样会被套用四口映射。
-
-hinlink,opc-h89k)
+	# ---- H89K：三口（gmac0=eth0 + 2×RTL8125=eth1/eth2）----
+	# 厂商固件 02_network 原值：hinlink,h89k -> LAN "eth0 eth1" / WAN "eth2"
+	hinlink,opc-h89k|\
+	hinlink,h89k)
 		ucidef_set_interfaces_lan_wan 'eth0 eth1' 'eth2'
 		;;
+
+	esac
+}
+
+generate_mac_from_mmc() {
+	local sd_hash=$(sha256sum /sys/class/block/mmcblk*/device/cid | head -n 1)
+	local mac_base=$(macaddr_canonicalize "$(echo "${sd_hash}" | dd bs=1 count=12 2>/dev/null)")
+	echo "$(macaddr_unsetbit_mc "$(macaddr_setbit_la "${mac_base}")")"
+}
+
+rockchip_setup_macs() {
+	local board="$1"
+	local lan_mac=""
+	local wan_mac=""
+	local label_mac=""
+
+	case "$board" in
+
+	# ---- 全部 HinLink 机型：从 eMMC 的 CID 生成稳定 MAC ----
+	#   mmcblk0 必须是 **eMMC**（见各 DTS 的 mmc0 alias），
+	#   否则会拿 TF 卡的 CID，换卡就换 MAC。
+	hinlink,opc-h68k-a|\
+	hinlink,opc-h68k-a-usb|\
+	hinlink,opc-h68k-c|\
+	hinlink,opc-h68k-c-usb|\
+	hinlink,opc-h68k-c-usb3|\
+	hinlink,opc-h68k-d|\
+	hinlink,opc-h68k-d-usb|\
+	hinlink,opc-h68k-new|\
+	hinlink,opc-h69k|\
+	hinlink,opc-h69k-mini|\
+	hinlink,opc-h66k|\
+	hinlink,h66k|\
+	hinlink,h68k|\
+	linkstar,h68k|\
+	hinlink,opc-h28k|\
+	hinlink,h28k|\
+	hlink,h28k|\
+	linkstar,h28k|\
+	hinlink,opc-h29k|\
+	hinlink,h29k|\
+	hinlink,h29k-v1.3-114|\
+	hinlink,h29k-v5-114|\
+	hinlink,h29k-v5-149|\
+	hinlink,opc-ht2|\
+	hinlink,ht2|\
+	hlink,ht2|\
+	hinlink,h88k-v2|\
+	hinlink,h88k-v3|\
+	hinlink,opc-h89k|\
+	hinlink,h89k)
+		wan_mac=$(macaddr_generate_from_mmc_cid mmcblk0)
+		lan_mac=$(macaddr_add "$wan_mac" 1)
+		;;
+
+	esac
+
+	[ -n "$lan_mac" ] && ucidef_set_interface_macaddr "lan" $lan_mac
+	[ -n "$wan_mac" ] && ucidef_set_interface_macaddr "wan" $wan_mac
+	[ -n "$label_mac" ] && ucidef_set_label_macaddr $label_mac
+}
+
+board_config_update
+board=$(board_name)
+rockchip_setup_interfaces $board
+rockchip_setup_macs $board
+board_config_flush
+
+exit 0

@@ -74,7 +74,7 @@
 
 / {
 	model = "HINLINK OPC-H89K";
-	compatible = "hinlink,opc-h89k", "rockchip,rk3588";
+	compatible = "hinlink,opc-h89k", "hinlink,h89k", "rockchip,rk3588";
 
 	chosen {
 		stdout-path = "serial2:1500000n8";

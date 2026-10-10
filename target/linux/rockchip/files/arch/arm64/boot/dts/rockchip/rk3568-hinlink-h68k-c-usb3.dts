@@ -23,7 +23,7 @@
 
 / {
 	model = "HinLink OPC-H68K C USB3";
-	compatible = "hinlink,opc-h68k-c-usb3", "hinlink,opc-h68k-c-usb", "rockchip,rk3568";
+	compatible = "hinlink,opc-h68k-c-usb3", "hinlink,opc-h68k-c-usb", "hinlink,h68k", "linkstar,h68k", "rockchip,rk3568";
 
 	aliases {
 		ethernet0 = &gmac0;

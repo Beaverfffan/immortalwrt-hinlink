@@ -514,6 +514,137 @@ gmac0_rx_bus2   GPIO2_C1 GPIO2_C2 GPIO4_C2
 
 ---
 
+### 4.11 ★ 2026-10-10 全机型复验：board.d 合并 bug / LED 名字 / H69K GMAC
+
+把上一轮用于 H88K/H89K 的标准（**全网检索 → 厂商 dtb 逐字段比对 → 真实编译**）
+推广到其余全部机型后，查出 3 个「编得出但用不了」的真问题。
+
+#### ❶ board.d 合并后，我们一半机型的分支被官方 `*)` 兜底吃掉（最严重）
+
+`tools/integrate.py` 原来把我们的 case 体插在官方 `case ... esac` 的
+**`esac` 之前**。但 OpenWrt 的 board.d 每个 case 块末尾都有
+
+```sh
+	*)
+		;;
+esac
+```
+
+⇒ 我们的分支落在 `*)` **之后**，`*)` 会先匹配到所有 HinLink 机型，
+**我们的分支永远不会执行**。
+
+实测（编出的固件里，`01_leds` / `02_network` 合并后）：
+
+```
+	hinlink,opc-h28k|\      ← 我们
+	...
+	*)
+		;;
+esac
+	# ---- RK3528 机型 ----   ← 被丢掉（原文在这之后）
+```
+
+⇒ 后果：**H28K / H29K×3 / HT2 / H88K×2 / H89K 在固件里既没有网络配置
+也没有 LED 配置**（落到官方兜底 = 不设任何东西）。
+
+修法：
+1. `tools/integrate.py` 的插入点改成 **官方 `*)` 之前**（新增 `insert_point()`），
+   并顺手丢掉我方 body 里可能存在的 `*)` arm。
+2. `01_leds` / `02_network` 重写为**结构合法**的脚本：01_leds 只含 **1** 个
+   `case` 块、02_network **2** 个（接口 → MAC），**都不带 `*)` 兜底**，
+   与官方块数一一对应。
+3. 新增 `tools/verify_boardd.py` 校验「我们的条目是否都在 `*)` 之前」。
+
+> 上一版文件还有个副作用：`01_leds` 里写了 `*) ;;` 又接着写 `esac` 后面的
+> case 标签，**本身就是 shell 语法错误**（`sh -n` 不过）。
+
+#### ❷ LED 名字与 DTS 不符 → 灯不亮
+
+`rk3568-hinlink-opc.dtsi` 用的是 mainline 的 `color` / `function` 写法，
+内核 gpio-leds 会拼出 LED 名字：
+
+| DTS | 生成的 LED 名字 |
+|---|---|
+| `LED_COLOR_ID_BLUE` + `LED_FUNCTION_WAN` | **`blue:wan`** |
+| `LED_COLOR_ID_AMBER` + `LED_FUNCTION_DISK` | **`amber:disk`** |
+| `LED_COLOR_ID_GREEN` + `LED_FUNCTION_STATUS` | **`green:status`** |
+
+而我们 `01_leds` 里写的是厂商 2022/2023 固件的**旧式 label**
+`blue:net` / `yellow:disk` / `green:work` —— **一个都对不上**，
+`/etc/init.d/led` 找不到设备，WAN / 盘位 / 状态灯全部不亮。
+
+（厂商当年用的 DTS 是 `label = "opc-h68k-c:blue:net"`，名字带板名前缀；
+本仓库换成 mainline 写法后名字变了，board.d 必须跟着改。）
+
+⇒ 已按 DTS 实际名字改正。RK3588 那份不受影响 —— `rk3588-hinlink.dtsi`
+用的仍是旧式 `label = "blue:net" / "yellow:disk" / "green:sys" / "red:work"`，
+所以 h88k / h89k 的 `blue:net` 是对的。
+
+#### ❸ H69K 用错了 GMAC（物理口接不上）
+
+厂商 2024 QWRT-R24.07.07 固件里的 H69K 专用 dtb
+`fw24/dtb/dtb_3245000.dtb`（`model = "HINLINK OPC-H69K Board"`）：
+
+```
+/ethernet@fe010000（gmac1）  status = "okay"
+/ethernet@fe2a0000（gmac0）  status = "disabled"
+aliases { ethernet0 = "/ethernet@fe010000" }
+```
+
+iStoreOS 官方 `rk3568-opc-h69k.dts` 完全一致（`ethernet0 = &gmac1`、
+`&gmac0 { status = "disabled" }`）。
+
+而本仓库早期写成 **gmac0 okay / gmac1 disabled** —— 板子 RGMII 走的是
+gmac1 的引脚，用 gmac0 等于把信号绑到另一组复用，**网口根本起不来**。
+已改为 gmac1（与 H68K 共底板，delay 值同 H68K 的 gmac1）。
+
+#### ❹ 顺带查清：`tx_delay` / `rx_delay` 在 `rgmii-id` 下是死配置
+
+`drivers/net/ethernet/stmicro/stmmac/dwmac-rk.c`：
+
+```c
+case PHY_INTERFACE_MODE_RGMII:     /* phy-mode = "rgmii" */
+        bsp_priv->ops->set_to_rgmii(bsp_priv, tx_delay, rx_delay);
+        break;
+case PHY_INTERFACE_MODE_RGMII_ID:  /* phy-mode = "rgmii-id" */
+        bsp_priv->ops->set_to_rgmii(bsp_priv, 0, 0);       /* ← 强制清零 */
+        break;
+```
+
+⇒ 本仓库各机型的 `phy-mode = "rgmii-id"`（跟主线）时，
+我们照厂商 dtb 抄的 `tx_delay` / `rx_delay` **完全被忽略**，
+RGMII 延时全部由 PHY（RTL8211F）的内部延时提供 —— 这正是主线
+`rk3568-hinlink-h68k.dts` 只写 `rgmii-id`、不写 delay 的原因。
+两套做法都是「一份延时」，不会叠加；已在 DTS 里注明这层关系，
+并保留厂商值（若将来改用 `phy-mode = "rgmii"` 就会生效）。
+
+#### ❺ 补齐 LED 状态别名与 compatible
+
+| 项 | 情况 |
+|---|---|
+| **LED 状态别名** | 上游有 `patches-6.18/121-arm64-dts-rockchip-add-led-aliases-for-HINLINK.patch`，给 h28k 与 opc.dtsi 加 `led-boot / led-failsafe / led-running / led-upgrade` → `&led_work`。本仓库以 `files/` 覆盖内核树，不便叠该 patch，**直接写进 DTS** —— 现在全部机型都有了（H88K/H89K 的 dtsi 原本就有） |
+| **compatible 覆盖** | 补上上游/厂商用过的写法，使厂商固件的 board.d 也能匹配：`hinlink,h28k` + `linkstar,h28k`、`hinlink,h66k`、`hinlink,h68k` + `linkstar,h68k`、`hinlink,h69k`、`hinlink,ht2` + `hlink,ht2`、`hinlink,h89k`、`hinlink,h29k` |
+| **H28K mmc 顺序** | 厂商 dtb 是 `mmc0=sdmmc(TF)`；**上游主线是 `mmc0=sdhci(eMMC)`**。我们改回上游 —— 因为 `02_network` 用 `macaddr_generate_from_mmc_cid mmcblk0` 生成稳定 MAC，`mmc0` 必须是 eMMC，否则换 TF 卡就换 MAC。（厂商固件用 `root=PARTUUID=`，与 mmc 编号无关，不受影响） |
+| **RK3528 调压 ramp-delay** | 厂商 H28K dtb 有 `regulator-ramp-delay = <6001>`（`/vdd-cpu`），我们没有 → 内核打 `vdd_cpu: ramp_delay not set`。三款 RK3528（H28K / H29K×3 / HT2）是同一路 5kHz PWM 调压、电压范围逐值相同，统一补 `6001` |
+
+#### 复验结果
+
+```
+DTS 编译（cpp + dtc，OpenWrt 同款命令）:  20/20 PASS   0 FAIL
+DTB 反编译核查（verify_dtb.py）:
+  H69K  gmac1=okay / gmac0=disabled / ethernet0→fe010000   ✅
+  全部机型 LED aliases led-boot~led-upgrade 存在            ✅
+  compatible 列表含上游/厂商写法                            ✅
+board.d（verify_boardd.py）:
+  01_leds   块1  兜底前 38 条 / 兜底后 0 条   ✅
+  02_network 块1  兜底前 38 条 / 兜底后 0 条   ✅
+             块2  兜底前 30 条 / 兜底后 0 条   ✅
+u-boot: 8 个变体条目 + UBOOT_TARGETS 齐全；defconfig 自动选中
+        CONFIG_PACKAGE_u-boot-hinlink-h68k-rk3568=y（证明登记生效）
+```
+
+---
+
 ## 五、仓库结构
 
 ```

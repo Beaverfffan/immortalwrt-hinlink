@@ -18,7 +18,7 @@
 
 / {
 	model = "HINLINK OPC-H68K d (2023.4, SATA)";
-	compatible = "hinlink,opc-h68k-d", "rockchip,rk3568";
+	compatible = "hinlink,opc-h68k-d", "hinlink,h68k", "linkstar,h68k", "rockchip,rk3568";
 
 	aliases {
 		ethernet0 = &gmac0;

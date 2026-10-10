@@ -16,7 +16,7 @@
 
 / {
 	model = "HinLink OPC-H68K (2023 new board)";
-	compatible = "hinlink,opc-h68k-new", "rockchip,rk3568";
+	compatible = "hinlink,opc-h68k-new", "hinlink,h68k", "linkstar,h68k", "rockchip,rk3568";
 
 	aliases {
 		ethernet0 = &gmac0;

@@ -21,7 +21,7 @@
 
 / {
 	model = "HINLINK H29K (v5, 1.49 inch touch)";
-	compatible = "hinlink,h29k-v5-149", "rockchip,rk3528";
+	compatible = "hinlink,h29k-v5-149", "hinlink,h29k", "rockchip,rk3528";
 
 	aliases {
 		mmc0 = &sdhci;
@@ -181,6 +181,14 @@
 		regulator-boot-on;
 		regulator-settling-time-up-us = <250>;
 		pwm-supply = <&vcc5v0_sys>;
+		/*
+		 * ★ 厂商 H29K dtb 未提供 ramp-delay，但不加会打
+		 *   `vdd_cpu: ramp_delay not set` 警告。
+		 *   本机与 H28K/HT2 是同一路 5kHz PWM 调压、
+		 *   电压范围逐字节相同（vdd_arm 746~1201000 /
+		 *   vdd_logic 705~1006000），故取厂商 H28K 的 6001。
+		 */
+		regulator-ramp-delay = <6001>;
 	};
 
 	vdd_logic: vdd-logic {
@@ -193,6 +201,14 @@
 		regulator-boot-on;
 		regulator-settling-time-up-us = <250>;
 		pwm-supply = <&vcc5v0_sys>;
+		/*
+		 * ★ 厂商 H29K dtb 未提供 ramp-delay，但不加会打
+		 *   `vdd_cpu: ramp_delay not set` 警告。
+		 *   本机与 H28K/HT2 是同一路 5kHz PWM 调压、
+		 *   电压范围逐字节相同（vdd_arm 746~1201000 /
+		 *   vdd_logic 705~1006000），故取厂商 H28K 的 6001。
+		 */
+		regulator-ramp-delay = <6001>;
 	};
 
 

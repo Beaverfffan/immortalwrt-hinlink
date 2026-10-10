@@ -23,7 +23,7 @@
 
 / {
 	model = "HINLINK OPC-HT2 Board";
-	compatible = "hinlink,opc-ht2", "rockchip,rk3528";
+	compatible = "hinlink,opc-ht2", "hinlink,ht2", "hlink,ht2", "rockchip,rk3528";
 
 	aliases {
 		mmc0 = &sdhci;
@@ -157,6 +157,13 @@
 		regulator-min-microvolt = <746000>;
 		regulator-max-microvolt = <1201000>;
 		regulator-settling-time-up-us = <250>;
+		/*
+		 * ★ 厂商 dtb 原值（/vdd-cpu, regulator-ramp-delay = <6001>）。
+		 *   不加会打 `vdd_cpu: ramp_delay not set` 警告。
+		 *   leux.net《iStoreOS适配HT2》里也提到要补 ramp-delay
+		 *   （该文用 12500，厂商 dtb 实测是 6001，此处取厂商值）。
+		 */
+		regulator-ramp-delay = <6001>;
 	};
 
 	vdd_logic: vdd-logic {
@@ -169,6 +176,8 @@
 		regulator-min-microvolt = <705000>;
 		regulator-max-microvolt = <1006000>;
 		regulator-settling-time-up-us = <250>;
+		/* 同 vdd_arm：同一路 5kHz PWM 调压，取厂商 vdd_cpu 的 6001 */
+		regulator-ramp-delay = <6001>;
 	};
 };
 

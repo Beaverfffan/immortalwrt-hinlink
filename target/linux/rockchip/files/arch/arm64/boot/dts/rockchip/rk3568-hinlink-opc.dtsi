@@ -11,6 +11,24 @@
 	aliases {
 		mmc0 = &sdhci;
 		mmc1 = &sdmmc0;
+
+		/*
+		 * ★ LED 状态别名 —— OpenWrt 的 LED 框架（/etc/init.d/led）靠这四个
+		 *   alias 指示固件状态（启动中 / failsafe / 正常 / 升级中）。
+		 *   没有它们，系统状态灯只会停在 DTS 的 default-trigger 上，
+		 *   重启时看不到「正在启动」「进入恢复模式」等提示。
+		 *
+		 *   上游 openwrt 是通过
+		 *     patches-6.18/121-arm64-dts-rockchip-add-led-aliases-for-HINLINK.patch
+		 *   加的这一段；本仓库直接把补丁内容写进 DTS，
+		 *   因为本仓库以 files/ 覆盖内核树，不易叠加该 patch。
+		 *
+		 *   指向 green:status（GPIO3_B0），与厂商 green:work 同一颗灯。
+		 */
+		led-boot = &led_work;
+		led-failsafe = &led_work;
+		led-running = &led_work;
+		led-upgrade = &led_work;
 	};
 
 	chosen {
@@ -66,7 +84,7 @@
 			gpios = <&gpio3 RK_PA7 GPIO_ACTIVE_HIGH>;
 		};
 
-		led-2 {
+		led_work: led-2 {
 			color = <LED_COLOR_ID_GREEN>;
 			function = LED_FUNCTION_STATUS;
 			gpios = <&gpio3 RK_PB0 GPIO_ACTIVE_HIGH>;

@@ -17,7 +17,7 @@
 
 / {
 	model = "HinLink OPC-H69K (5G)";
-	compatible = "hinlink,opc-h69k-mini", "rockchip,rk3568";
+	compatible = "hinlink,opc-h69k-mini", "hinlink,h69k", "hinlink,h69k-mini", "hinlink,h68k", "rockchip,rk3568";
 
 	aliases {
 		ethernet0 = &gmac0;
