@@ -62,6 +62,30 @@
 		};
 	};
 
+	/*
+	 * 风扇（PWM 调速）
+	 *
+	 * ★ 原 dtsi 只写了 `&pwm14 { status = "okay" }` 却没有 fan 节点 ——
+	 *   等于 PWM 控制器开了但没人用它，风扇不转。
+	 *
+	 * 参数来源：
+	 *   - pwms / period / fan-supply 取自**厂商 H89K 固件 dtb**
+	 *     （/pwm-fan: pwms = <&pwm14 0 50000 0>, fan-supply = <&vcc5v0_sys>）
+	 *   - cooling-levels 同为厂商 H89K dtb 的 5 档：<0 0x5f 0x91 0xc3 0xff>
+	 *     = 0% / 37% / 57% / 76% / 100%
+	 *   - armbian 的 rk3588-hinlink-h88k.dts 也用 pwm14 + 同样的 period
+	 *     （只是没写 cooling-levels），两侧吻合 ⇒ H88K / H89K 风扇同源。
+	 *
+	 * ⚠️ 设备树里没有 tach（转速反馈）引脚，所以只有占空比、没有 RPM。
+	 */
+	pwm-fan {
+		compatible = "pwm-fan";
+		#cooling-cells = <2>;
+		cooling-levels = <0 0x5f 0x91 0xc3 0xff>;
+		fan-supply = <&vcc5v0_sys>;
+		pwms = <&pwm14 0 50000 0>;
+	};
+
 	/* it's modem reset pin */
 	modem_enable: modem-enable {
 		compatible = "regulator-fixed";

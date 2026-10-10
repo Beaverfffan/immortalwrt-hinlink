@@ -2,65 +2,67 @@
 /*
  * HinLink OPC-H89K
  *
- * HinLink 适配 for immortalwrt —— 每机型独立 DTS，不做自适应。
+ * ★★ 本文件已重构为「继承 H88K 公共部分（rk3588-hinlink.dtsi）+ 只写差异」
  *
- * ★ 从零移植：H89K 此前在所有 OpenWrt 衍生固件中零适配（2022-2025 年
- *   历次调研均未找到）。本 DTS 全部参数来自厂商 immortalwrt v1.2.2
- *   (2025-06-08) 固件内解出的 dtb（88036 B），逐项核对。
+ * 用户指出（2026-10-10）：H88K 的几个版本与 H89K 是**互相改出来的**，
+ * 并不是完全独立。对比厂商 dtb 后完全印证 —— 两者的 PMIC、存储、串口、
+ * PCIe、模组 IO、LED 引脚逐项一致，只有下面这些差异：
  *
- * 硬件构成（RK3588，厂商 dtb 实证）
+ *   项                  H88K（rk3588-hinlink.dtsi）   H89K（本文件）
+ *   ---------------------------------------------------------------------
+ *   gmac0 phy-mode      rgmii-rxid                    rgmii
+ *   gmac0 tx_delay      0x44                          0x42
+ *   gmac0 rx_delay      0x00                          0x34
+ *   eMMC                hs400 + enhanced-strobe       hs200
+ *   eMMC max-frequency  200 MHz                       150 MHz
+ *   TF 卡               sd-uhs-sdr50                  sd-uhs-sdr104
+ *   第 3 个 2.5G 口     v2 无（combphy0_ps 给 SATA0）  pcie2x1l2 挂 RTL8125
+ *   屏幕                v3 走 spidev 用户态            ST7789V 135x240 rot90 @spi4
+ *   屏供电              —                             vcc3v0_lcd 3.0V
+ *   红外                —                             GPIO0_D4
+ *
+ * 其余全部由 rk3588-hinlink.dtsi 提供：rk806 系统电源、rk8602/rk8603
+ * CPU/NPU 大电流电源、hym8563 RTC、es8388 音频、eMMC/TF/uart2、gmac0/mdio0、
+ * pcie2x1l0/l1、pcie30phy/pcie3x4、combphy、pwm14 风扇、saradc、tsadc、
+ * 模组供电/复位、LED（4 个 GPIO 与 H89K 完全相同，只是标签用途不同）。
+ *
+ * ⚠️ 旧版本（2026-10-10 之前）本文件是**独立写的**，漏掉了 rk806 PMIC 与
+ *    eMMC / TF 卡 / uart2 —— 那样的 DTB 根本起不来（内核找不到根文件系统、
+ *    串口无输出、CPU 供电不受控）。本次改为继承后一并修好。
+ *
+ * ⚠️ 旧版本的另外三处错误也已修正：
+ *    ① `snps,reset-gpio = <&pinctrl RK_PB3 ...>` —— 写成了 `&pinctrl`，
+ *       应为 `&gpio4`。本文件不再重写该属性（dtsi 里是对的）。
+ *    ② 风扇写成 `&pwm3` —— 厂商 dtb 的 /pwm@febf0020 对应 **pwm14**
+ *       （RK3588: febf0000=pwm12 … febf0020=pwm14）。dtsi 里已是 pwm14。
+ *    ③ 模组 IO 极性写成 ACTIVE_LOW —— 厂商 dtb 里两路都是 **HIGH 有效**
+ *       （/vcc3v3-modem = GPIO4_A3 HIGH、/modem-enable = GPIO4_C6 HIGH，
+ *        均 enable-active-high，且 modem-enable 有 2 秒启动延时）。
+ *       dtsi 里本来就是对的。
+ *
+ * 硬件构成（厂商 immortalwrt v1.2.2 固件 dtb 实证，88036 B）
+ * ----------------------------------------------------------
+ *   网口 = 1×GMAC(gmac0 / fe1b0000, RGMII, RTL8211F) + 2×RTL8125 2.5G(PCIe)
+ *          gmac1(fe1c0000) 在厂商 dtb 里 disabled
+ *          两个 2.5G 分别挂 pcie2x1l1(fe180000) 与 pcie2x1l2(fe190000)
+ *   厂商 02_network 映射：LAN "eth0 eth1" / WAN "eth2"（板载 RGMII 作 WAN）
+ *   屏   = ST7789V 135×240 rot90 @spi4(fecb0000)，dc=GPIO1_A4，供电 3.0V
+ *   风扇 = pwm14，5 档（由 dtsi 的 pwm-fan 节点提供）
+ *   模组 = 供电 GPIO4_A3 + 复位 GPIO4_C6（均高有效，2 秒启动延时）
+ *   SATA = 厂商 dtb 里 sata0/1/2 与 combphy 三路全 disabled，本机无 SATA 座
+ *
+ *   屏参数交叉验证（厂商 dtb ↔ 上游 unifreq PR#19）：
+ *     compatible / 分辨率 / rotate / buswidth / spi-max-freq / dc-gpios
+ *     六项完全吻合，故 PR#19 的 H89K 屏配置可信。
+ *     ⚠️ 但 PR#19 的文件里 compatible 写的是 "hlink,h88k"（复制粘贴没改），
+ *        本文件使用独立的 compatible "hinlink,opc-h89k"。
+ *
+ * 枚举顺序（immortalwrt 6.18 dtc）
  * --------------------------------
- *   网口 = 1×GMAC(fe1b0000, RGMII) + 2×RTL8125 2.5G (PCIe)
- *         GMAC fe1c0000 在厂商 dtb 里 disabled，本机不用。
- *         PCIe 网卡分别挂在 pcie2x1l1(fe180000) 与 pcie2x1l2(fe190000)，
- *         reset 脚分别是 GPIO4_A2 与 GPIO4_A5（高有效）。
- *
- *   厂商 02_network 映射：LAN "eth0 eth1" / WAN "eth2"
- *         ⇒ 板载 RGMII 作WAN（GMAC 节点显式 label = "eth2"）
- *
- *   显示 = ST7789V 135×240 rot90 @spi@fecb0000 (SPI4 m2)
- *          dc-gpios = GPIO1_A4，屏供电 vcc3v0_lcd (3.0V)
- *   风扇 = pwm3(febf0020)
- *   模组 = 4G/5G 供电（GPIO4_A3）与复位（GPIO4_C6）
- *
- *   ★ SATA：厂商 dtb 里 sata0/1/2 三路**均为 disabled**
- *     （combphy 也未使能），本机不接 SATA 座，故本 DTS 不使能 sata。
- *
- *   ★ 屏参数交叉验证（本 DTS 厂商 dtb 实证 ↔ 上游 unifreq PR#19 独立实证）：
- *     项目          厂商 dtb                      上游 rk3588-hlink-h89k.dts
- *     compatible    sitronix,st7789v             sitronix,st7789v            ✓
- *     分辨率        135 × 240(0x87 × 0xf0)        135 × 240                    ✓
- *     rotate        0x5a = 90                    rotate = <90>                ✓
- *     buswidth      8                            buswidth = <8>               ✓
- *     spi-max-freq  1000000 (1 MHz)              1000000                      ✓
- *     dc-gpios      gpio1 pin4 = GPIO1_A4        <&gpio1 RK_PA4 ACTIVE_HIGH>  ✓
- *     CS            spi4m2_cs0 (GPIO1_B3)        &spi4m2_cs0                 ✓
- *     SPI 引脚      GPIO1_B2/C1/D1 (func8)       由 dtsi 提供                  —
- *     x/y-offset    ★ 厂商 dtb 无此属性          40 / 52                      见下
- *
- *     ⇒ 屏驱动型号、分辨率、旋转、总线宽度、频率、DC 脚、CS 六项**双方完全吻合**，
- *       可确认「上游 PR#19 的 H89K 屏配置可信」。
- *
- *   ★ 关于 x-offset=40 / y-offset=52：这是**上游自己加的**，厂商 dtb 里没有。
- *     它对应 fbtft 的 set_addr_win 偏移补偿 —— ST7789V 135×240 面板在
- *     rotate=90 后显存窗口需要平移才能对上实际可见区。
- *     本仓库已有的 `9999-fbtft-adjust-display-offset-for-rotation-h29k-1.14.patch`
- *     正是同一机制（1.14 寸也是 135×240，偏移量 rot90 时同为 xs+=40, ys+=52），
- *     两边数值吻合，可交叉印证。
- *
- *   ⚠️ 上游 PR#19 的 h89k 文件里 `compatible = "hlink,h88k"` 且
- *     `model = "Hlink H88K"` —— 明显是从 h88k-v3 复制粘贴后忘了改，
- *     导致 H89K / H88K / H88K-v3 三者 compatible 完全相同、无法区分。
- *     本 DTS 使用独立 compatible `hinlink,opc-h89k`，勿沿用上游写法。
- *
- * 枚举顺序（immortalwrt 6.18 dtc 顺序）
- * ------------------------------------
- *   GMAC 是 SoC 内部控制器，枚举固定 => eth0
- *   PCIe 网卡按 bus 扫描顺序        => eth1 / eth2
- *
- *   ⚠️ GMAC 节点在厂商 dtb 里 label = "eth2"，与 dtc 枚举的 eth0 不一致。
- *     本方案沿用厂商 02_network 的映射（LAN eth0 eth1 / WAN eth2），
- *     与出厂固件行为一致。
+ *     GMAC 是 SoC 内部控制器，枚举固定 => eth0
+ *     PCIe 网卡按 bus 扫描顺序          => eth1 / eth2
+ *   ⚠️ 厂商 dtb 里 GMAC 节点 label = "eth2"，与 dtc 枚举的 eth0 不一致；
+ *      本方案沿用厂商 02_network 映射（LAN eth0 eth1 / WAN eth2）。
  */
 
 /dts-v1/;
@@ -68,77 +70,17 @@
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/pinctrl/rockchip.h>
 
-#include "rk3588.dtsi"
+#include "rk3588-hinlink.dtsi"
 
 / {
-	model = "HINLINK OPC-H89K Board";
+	model = "HINLINK OPC-H89K";
 	compatible = "hinlink,opc-h89k", "rockchip,rk3588";
 
 	chosen {
 		stdout-path = "serial2:1500000n8";
 	};
 
-	/* ---- 板载供电（厂商 dtb 的 regulator-fixed 节点） ---- */
-	vcc_5v0_sys: vcc-5v0-sys {
-		compatible = "regulator-fixed";
-		regulator-name = "vcc5v0_sys";
-		regulator-always-on;
-		regulator-boot-on;
-		regulator-min-microvolt = <5000000>;
-		regulator-max-microvolt = <5000000>;
-	};
-
-	vcc3v3_modem: vcc-3v3-modem {
-		compatible = "regulator-fixed";
-		regulator-name = "vcc3v3_modem";
-		regulator-always-on;
-		regulator-boot-on;
-		regulator-min-microvolt = <3300000>;
-		regulator-max-microvolt = <3300000>;
-	};
-
-	/*
-	 * ---- 4G / 5G 模组：H89K 的标志性特征 ----
-	 *
-	 * ★★ 两路独立 IO，缺一不可（参数全部来自厂商 2025 固件 dtb）：
-	 *
-	 *   modem_power  GPIO4_A3  低有效  **5.0V**  ← 模组主供电开关
-	 *       └ vin-supply = vcc_5v0_sys
-	 *   modem_reset  GPIO4_C6  低有效  **3.3V**  ← 模组复位（ vin 取 3.3V 轨）
-	 *       └ vin-supply = vcc3v3_modem
-	 *
-	 *⚠️ 与 H29K 的模组 IO **完全相反**，别套用：
-	 *     H29K v1.3  模组 power-gpios = GPIO4_B5（一路，模组自己管供电）
-	 *     H29K v5    模组不独立控制供电
-	 *     H89K       供电(GPIO4_A3/5V) + 复位(GPIO4_C6/3.3V) 两路分开
-	 *   套错会导致**模组不上电**或**无法复位**。详见 docs/HARDWARE.md §四。
-	 *
-	 * ⚠️ 上游 unifreq PR#19 的 rk3588-hlink-h89k.dts 没有这两个节点
-	 *    （它整份 DTS 只加了屏和 PCIe 网卡）。本节点来自厂商 dtb 实证。
-	 */
-	modem_power: modem-power {
-		compatible = "regulator-fixed";
-		regulator-name = "modem_power";
-		regulator-always-on;
-		regulator-boot-on;
-		regulator-min-microvolt = <5000000>;
-		regulator-max-microvolt = <5000000>;
-		vin-supply = <&vcc_5v0_sys>;
-		gpio = <&gpio4 RK_PA3 GPIO_ACTIVE_LOW>;
-	};
-
-	modem_reset: modem-reset {
-		compatible = "regulator-fixed";
-		regulator-name = "modem_reset";
-		regulator-always-on;
-		regulator-boot-on;
-		regulator-min-microvolt = <3300000>;
-		regulator-max-microvolt = <3300000>;
-		vin-supply = <&vcc3v3_modem>;
-		gpio = <&gpio4 RK_PC6 GPIO_ACTIVE_LOW>;
-	};
-
-	/* 屏供电（厂商 dtb 原值 3.0V，always-on） */
+	/* 屏供电 3.0V（H89K 特有；厂商 dtb /vcc3v0-lcd） */
 	vcc3v0_lcd: vcc3v0-lcd {
 		compatible = "regulator-fixed";
 		regulator-name = "vcc3v0_lcd";
@@ -146,131 +88,78 @@
 		regulator-boot-on;
 		regulator-min-microvolt = <3000000>;
 		regulator-max-microvolt = <3000000>;
-		vin-supply = <&vcc_5v0_sys>;
+		vin-supply = <&vcc5v0_sys>;
 	};
 };
 
 /* ============================================================
- * 网口 1/3：GMAC(RGMII) —— 板载口，厂商标为 WAN
+ * 与 H88K 的差异（全部按厂商 dtb 覆盖）
  * ============================================================ */
 
+/*
+ * 板载千兆口（RTL8211F）
+ *   厂商 dtb：phy-mode = "rgmii"、tx_delay = 0x42。
+ *   H88K 那份是 rgmii-rxid + rx_delay 0x00 —— 两边都是 RTL8211F + RGMII，
+ *   差别只在 delay 由谁补。这里保留厂商 H89K 的值（tx/rx delay 都显式给）。
+ */
 &gmac0 {
-	clock_in_out = "output";
 	phy-mode = "rgmii";
-	/* 厂商 dtb 原值 */
 	tx_delay = <0x42>;
 	rx_delay = <0x34>;
-	snps,reset-gpio = <&pinctrl RK_PB3 GPIO_ACTIVE_LOW>;
-	snps,reset-active-low;
-	snps,reset-delays-us = <0 20000 100000>;
-	phy-handle = <&rgmii_phy0>;
-
-	pinctrl-names = "default";
-	/* 厂商 dtb 原值：GPIO2_A6/A7/B1/B2 数据 + GPIO2_B0/B3 时钟 */
-	pinctrl-0 = <&gmac0_miim
-		     &gmac0_rgmii_bus
-		     &gmac0_rgmii_clk
-		     &gmac0_tx_bus2
-		     &gmac0_rx_bus2>;
-
-	label = "eth2";
-	status = "okay";
 };
 
-&gmac1 {
-	status = "disabled";
+/* 板载 eMMC：厂商 dtb 是 hs200（H88K dtsi 写的是 hs400） */
+&sdhci {
+	max-frequency = <150000000>;
+	mmc-hs200-1_8v;
+	/delete-property/ mmc-hs400-1_8v;
+	/delete-property/ mmc-hs400-enhanced-strobe;
 };
 
-&mdio0 {
-	rgmii_phy0: ethernet-phy@1 {
-		compatible = "ethernet-phy-ieee802.3-c22";
-		reg = <0x1>;
-	};
-};
-
-/* ============================================================
- * 网口 2/3 与 3/3：2×RTL8125 2.5G 走 PCIe
- *   厂商 dtb 在这两个控制器下各挂一个 pci10ec,8125
- * ============================================================ */
-
-/*
- * PCIe 网卡 1（pcie2x1l1 / fe180000）
- * reset = GPIO4_A2，高有效（厂商 dtb 实证）
- */
-&pcie2x1l1 {
-	reset-gpios = <&gpio4 RK_PA2 GPIO_ACTIVE_HIGH>;
-	max-link-speed = <2>;              /* Gen2 = 5 GT/s，厂商原值 */
-	status = "okay";
-
-	pcie2-0 {
-		compatible = "pci10ec,8125";
-		reset-gpios = <&gpio4 RK_PA2 GPIO_ACTIVE_HIGH>;
-	};
+/* TF 卡：厂商 dtb 是 sdr104（H88K dtsi 写的是 sdr50） */
+&sdmmc {
+	/delete-property/ sd-uhs-sdr50;
+	sd-uhs-sdr104;
 };
 
 /*
- * PCIe 网卡 2（pcie2x1l2 / fe190000）
- * reset = GPIO4_A5，高有效（厂商 dtb 实证）
+ * 第 3 个网口：2.5G RTL8125 走 pcie2x1l2（fe190000）
+ *   reset = GPIO4_A5 高有效（厂商 dtb 实证）
  *
- * ★ 更正记录：原来写的 `&gpio5 RK_PA0 GPIO_ACTIVE_LOW` 是**错的** ——
- *   ① RK3588 只有 gpio0..gpio4（6.18 rk3588-base.dtsi 里就这5 个），
- *     `&gpio5` 会因 phandle 找不到而**编译失败**；
- *   ② 厂商 dtb 的 GPIO4_A5 是 **ACTIVE_HIGH**，不是低有效。
- *   厂商 dtb 四路 PCIe 的 reset 全在 GPIO4：
- *     /pcie@fe180000 (pcie2x1l1) → GPIO4_A2  HIGH
- *     /pcie@fe190000 (pcie2x1l2) → GPIO4_A5  HIGH
- *     /pcie@fe150000 (pcie2x1l0) → GPIO4_B6  HIGH   ← WiFi/M.2 位，本机未用
- *     /pcie@fe170000 (pcie3x4)   → GPIO0_B0  HIGH   ← 本机未用
+ * H88K v2 上这个控制器不用 —— 它的 combphy0_ps 给了 SATA0；
+ * H89K 没有 SATA 座，combphy0_ps 正好给 pcie2x1l2 用（dtsi 里已 okay）。
  */
 &pcie2x1l2 {
 	reset-gpios = <&gpio4 RK_PA5 GPIO_ACTIVE_HIGH>;
-	max-link-speed = <2>;
+	max-link-speed = <2>;              /* Gen2 = 5 GT/s，厂商原值 */
 	status = "okay";
-
-	pcie2-1 {
-		compatible = "pci10ec,8125";
-		reset-gpios = <&gpio4 RK_PA5 GPIO_ACTIVE_HIGH>;
-	};
 };
 
 /* ============================================================
- * 引脚（全部为厂商 dtb 原值）
+ * 引脚（H89K 特有）
+ *
+ *   ★ gmac0 的 MDIO/RGMII 引脚**不要在这里重定义** ——
+ *     内核 rk3588-extra-pinctrl.dtsi 已提供 gmac0_miim / gmac0_tx_bus2 /
+ *     gmac0_rx_bus2 / gmac0_rgmii_clk / gmac0_rgmii_bus，且 funct 值正确（1）。
+ *     重定义会 duplicate_label；若 funct 写成 RK_FUNC_GPIO(0) 则 MDIO 不通。
+ *     （这是早期真实编译报错换来的教训）
  * ============================================================ */
 
 &pinctrl {
 	/*
-	 * ★ 原 gmac { gmac0_miim / gmac0_rgmii_bus / gmac0_rgmii_clk /
-	 *         gmac0_tx_bus2 / gmac0_rx_bus2 } 整段**已删除**。
+	 * ★ LED 的 4 个 pinctrl（led_net_en / led_sata_en / led_user_en /
+	 *   led_work_en）**不要在这里重定义** —— rk3588-hinlink.dtsi 的
+	 *   /pinctrl/leds 下已经有完全相同的定义（引脚也一样，都是
+	 *   GPIO2_C3 / GPIO2_C5 / GPIO3_B7 / GPIO0_A0），
+	 *   重定义会报 duplicate_label：
+	 *     Duplicate label 'led_work_en' on /pinctrl/led/led-work-en
+	 *                                   and /pinctrl/leds/led_work_en
+	 *   （这是真实 dtc 编译报错换来的教训）
 	 *
-	 * 原因（真实编译验证得出）：
-	 *   ① 这 5 个标签内核 rk3588-extra-pinctrl.dtsi 里**已经全有**，
-	 *      重定义会报 duplicate_label：
-	 *        Duplicate label 'gmac0_miim' on /pinctrl/gmac/gmac0-miim
-	 *                                        and /pinctrl/gmac0/gmac0-miim
-	 *   ② 更关键：我们写的 funct 值是 `RK_FUNC_GPIO`(=0，GPIO 功能)，
-	 *      而内核写的是 1（正确的 MDIO/RGMII 功能）：
-	 *        内核 gmac0_miim: <4 RK_PC4 1 &pcfg_pull_none>, <4 RK_PC5 1 ...>
-	 *        我们   gmac0_miim: <4 RK_PC4 RK_FUNC_GPIO ...>, ...
-	 *      funct=0 会让引脚停在 GPIO 功能，MDIO 根本不通。
-	 *
-	 * 引脚号我们与内核一致（4 RK_PC4 / 4 RK_PC5 等），所以直接引用
-	 * 内核的定义即可 —— &gmac0 的 pinctrl-0 不变。
+	 *   厂商 H89K dtb 里的 pinctrl 名与 H88K 完全相同，
+	 *   只是 LED 的用途标签不同（H89K: 4G/5G/sys/power），
+	 *   所以直接复用 dtsi 的定义即可。
 	 */
-	led {
-		led_work_en: led-work-en {
-			rockchip,pins = <0 RK_PA0 RK_FUNC_GPIO &pcfg_pull_none>;
-		};
-		led_net_en: led-net-en {
-			rockchip,pins = <2 RK_PC3 RK_FUNC_GPIO &pcfg_pull_none>;
-		};
-		led_sata_en: led-sata-en {
-			rockchip,pins = <2 RK_PC5 RK_FUNC_GPIO &pcfg_pull_none>;
-		};
-		led_user_en: led-user-en {
-			rockchip,pins = <3 RK_PB7 RK_FUNC_GPIO &pcfg_pull_none>;
-		};
-	};
-
 	ir {
 		ir_int_pin: ir-int-pin {
 			rockchip,pins = <0 RK_PD4 RK_FUNC_GPIO &pcfg_pull_up>;
@@ -285,17 +174,8 @@
 };
 
 /* ============================================================
- * 板载器件
- * ============================================================ */
-
-/* 风扇 PWM（厂商 dtb 里 pwm@febf0020 为 okay）*/
-&pwm3 {
-	status = "okay";
-};
-
-/* ============================================================
  * 屏：ST7789V 135×240 rot90 走 SPI4 m2
- * 全部为厂商 dtb 原值，并经上游 unifreq PR#19 独立交叉验证
+ * 厂商 dtb 原值 + 上游 unifreq PR#19 六项交叉验证
  * ============================================================ */
 
 &spi4 {
@@ -323,10 +203,9 @@
 
 		/*
 		 * 显示偏移（配合 patches/9999-fbtft-read-display-offset-from-dt.patch）
-		 * 数值与 H29K 1.14" 同为 135x240 面板，原厂 1.14" 偏移 patch 适用：
+		 * 与 H29K 1.14" 同为 135x240 面板：
 		 *   rotate 90/270  ->  x += 40, y += 52
 		 *   rotate 0/180   ->  x += 52, y += 40
-		 * 与上游 unifreq PR#19 标注的 40 / 52 一致。
 		 * ⚠️ 厂商 dtb 里没有这两个属性，属推断值 —— 需实机确认画面是否完整。
 		 */
 		x-offset = <40>;
@@ -337,14 +216,8 @@
 };
 
 /* ============================================================
- * ★ 未配置项（厂商 dtb 中同样未启用，不擅自添加）
- *
- *   SATA  —— 厂商 dtb 里 sata0/1/2 与 combphy 均 disabled，本机无 SATA 座
- *   RTC   —— 厂商 dtb 有 hym8563-int 引脚（GPIO0_B2）但无 rtc 节点
- *   红外  —— 厂商 dtb 有 ir-int-pin（GPIO0_D4）引脚定义，
- *            但未见 gpio-ir-receiver 节点，故本 DTS 不使能
- *
- * ★ 屏的显示偏移：需配合 fbtft 偏移补偿 patch 使用，见文件头注释。
- *   厂商 dtb 的 panel 节点**没有** x-offset/y-offset 属性，
- *   偏移由内核 fbtft 驱动侧硬编码（对应本仓库 patches/ 下 1.14 寸那份）。
+ * ★ 不配置项（厂商 dtb 中同样未启用）
+ *   SATA —— sata0/1/2 全 disabled，本机无 SATA 座
+ *   红外 —— 厂商 dtb 只有 ir-int-pin 引脚定义，未见 gpio-ir-receiver 节点，
+ *           故本 DTS 只保留引脚定义、不使能驱动
  * ============================================================ */

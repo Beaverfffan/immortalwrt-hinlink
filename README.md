@@ -300,6 +300,44 @@ RK3528 的 WiFi 走 sdio0，所以这是厂商自己声明「本机无 WiFi」�
 同样没有 PCIe 控制器，与本仓库的 ht2.dts 一致。官网未列 HT2 参数，
 但厂商 dtb 已足够证明它与 H28K 不同。
 
+### 4.10 ★ H88K 与 H89K 是同源改出来的（2026-10-10 核实）
+
+用户指出「88K 的几个版本和 89k 都是互相修改出来的，并不是完全独立的」。
+对比厂商 dtb（`vendor-h89k.dtb`）、armbian 的 `rk3588-hinlink-h88k.dts`
+与 iStoreOS 的 `rk3588-hinlink.dtsi` 后**完全印证**：
+
+**逐项一致的公共部分**（因此直接共享 `rk3588-hinlink.dtsi`）
+
+| 项 | 说明 |
+|---|---|
+| rk806 系统电源 | 同一份 `rk3588-rk806-single.dtsi`；34 路 regulator 命名完全相同（`vdd_gpu_s0` / `vdd_cpu_lit_s0` / … / `vccio_sd_s0`）|
+| rk8602 + rk8603 | `i2c0` 的 `vdd_cpu_big0_s0` / `vdd_cpu_big1_s0`、`i2c2` 的 `vdd_npu_s0`，相同 |
+| hym8563 RTC | `i2c2` 下 `rtc@51`，相同 |
+| es8388 音频 | `audio-codec@11`，相同 |
+| eMMC / TF / uart2 | 引脚与供电相同（仅速率档位不同，见下表）|
+| gmac0 + mdio0 | RTL8211F，reset 同为 **GPIO4_B3** |
+| PCIe | `pcie2x1l1`(RTL8125, reset GPIO4_A2)、`pcie3x4`(NVMe, reset GPIO4_B6) 相同 |
+| 模组 IO | `vcc3v3_modem`(**GPIO4_A3 高有效**) + `modem_enable`(**GPIO4_C6 高有效**, 2 s 延时) 相同 |
+| LED | 4 个 GPIO **完全相同**（GPIO2_C3 / GPIO2_C5 / GPIO3_B7 / GPIO0_A0），只是标签用途不同 |
+| 风扇 | 都是 **pwm14** + 50000 ns 周期 |
+
+**H89K 相对 H88K 的全部差异**
+
+| 项 | H88K | H89K |
+|---|---|---|
+| gmac0 | `rgmii-rxid`, tx_delay `0x44`, rx_delay `0` | `rgmii`, tx_delay `0x42`, rx_delay `0x34` |
+| eMMC | hs400 + enhanced-strobe, 200 MHz | **hs200**, 150 MHz |
+| TF 卡 | sd-uhs-sdr50 | **sd-uhs-sdr104** |
+| 第 3 个 2.5G 口 | v2 无（`combphy0_ps` 给了 SATA0）| `pcie2x1l2` 挂 RTL8125 |
+| 屏幕 | v3 走 spidev + 用户态 | **ST7789V 135×240 rot90 @spi4** + 3.0 V 独立供电 |
+| 红外 | — | GPIO0_D4 |
+
+⇒ **H89K 的 DTS 已重构为 `#include "rk3588-hinlink.dtsi"` + 只写差异**，
+与 `h88k-v2` / `h88k-v3` 的做法完全一致（此前它是独立写的，见 §八 的历史缺陷记录）。
+
+> ★ 方法论：这一节能成立靠的是**逐字段对比厂商 dtb 与两份 dts**，
+> 而不是「看起来像就照抄」。用户给出的方向（同源）省掉了大量猜测。
+
 ### 4.9 ★「DT 里没有网卡节点」≠「板上没有网卡」
 
 这是本项目最值得记住的一条判据（来源：H28K 的三次反转）。
@@ -671,7 +709,25 @@ u-boot 里只有 H28K 的板级 dts。逐项核对三款机型的内核 dts 后�
 #### 109 —— OPC-H88K V2 / V3、OPC-H89K（RK3588）
 
 u-boot 里既没有 hinlink 的 RK3588 板级 dts，也没有 rk806 dtsi，因此另写一份
-**精简的 U-Boot 专用 dts**，只含 eMMC / TF 卡 / 调试串口。
+**精简的 U-Boot 专用 dts**。
+
+**2026-10-10 补全网口与 NVMe**：按 leux 的《RK3588设备H88K适配主线U-Boot》
+笔记补上（此前只有 eMMC / TF / 调试串口，进 U-Boot 会看到 "No ethernet found"）：
+
+```
+板载千兆   &gmac0 (RTL8211F) + &mdio0，reset = GPIO4_B3
+2.5G ×2    &pcie2x1l1 (reset GPIO4_A2) + &pcie2x1l2 (reset GPIO4_A5)
+           + &combphy0_ps / &combphy1_ps / &combphy2_psu
+NVMe       &pcie30phy + &pcie3x4 (reset GPIO4_B6)
+defconfig  CONFIG_PCI / CMD_PCI / PCIE_DW_ROCKCHIP / RTL8169 /
+           PHYLIB / PHY_REALTEK / DWC_ETH_QOS(_ROCKCHIP) / DM_MDIO /
+           CMD_NVME / NVME_PCI，并**去掉 generic 的 CONFIG_NO_NET**
+           （那是无网口通用板用的，留着网络驱动不会编译）
+```
+
+⚠️ H88K v2 的 `combphy0_ps` 给了 SATA 座 → 它的 u-boot dts **不使能 pcie2x1l2**
+（只有 2 个网口）；v3 与 H89K 才使能第三个。
+U-Boot 里查看 NVMe：`pci enum` → `nvme scan` → `nvme info`。
 
 ★ 刻意**不含 rk806 PMIC 节点**：RK3588 的 PMIC 由 Rockchip TPL
 （`rk3588_ddr_lp4_2112MHz_lp5_2400MHz_v1.19.bin`）在 SPL 之前就初始化好
@@ -779,6 +835,7 @@ fdtfile=rockchip/rk3568-hinlink-h68k.dtb
 |---|---|
 | DTS 语法结构（19 份） | ✅ 18/19 PASS（1 类失败为**既存**的版本错配，见下） |
 | 口数与板级映射一致 | ✅ **19/19** 机型 OK（RK3568 + RK3528 + RK3588） |
+| H89K DTS 完整性 | ✅ **已修复**（2026-10-10 重构为继承 `rk3588-hinlink.dtsi`；eMMC/TF/uart2/PMIC/PCIe2x1l2 全部就位，真实编译 PASS 134257 B）|
 | 重复机型清理 | ✅ 已合并 `h68k-c-usb` / `h68k-c-usb3`；`c` / `d` 系列经确认**不合并** |
 | 设备定义 ↔ DTS 文件对齐 | ✅ 无孤儿、无缺失 |
 | `compatible` 唯一性 | ✅全部唯一 |
@@ -902,7 +959,7 @@ H89K 不受影响（直接 include `rk3588.dtsi`，不经过 `rk3588s-ip.dtsi`�
 | 6 | **误判 H28K 为单网口** —— 把「厂商 dtb 里没有网卡节点」当成「板上没有网卡」，实际 H28K 有 PCIe 千兆口（官网规格表 + 厂商 dtb 里 PCIe 链路完整使能） | H28K 少配一个 WAN 口 |
 | 7 | **H89K 的 DTS 缺 rk806 PMIC / eMMC / TF 卡 / 调试串口** —— 厂商 dtb 里这四样全都有（详见下节） | 该 DTB **无法正常启动**（找不到根文件系统、无串口输出、CPU 供电不受内核控制） |
 
-### ⚠️ 未修：H89K 的 DTS 严重不完整
+### ✅ 已修：H89K 的 DTS 曾严重不完整（2026-10-10 重构修复）
 
 做 RK3588 的 u-boot 时对比厂商 dtb（`vendor-h89k.dtb`）发现：本仓库的
 `rk3588-hinlink-h89k.dts` 只有 8 个 `&label` 段（`gmac0` / `gmac1` / `mdio0` /
@@ -921,9 +978,25 @@ H89K 不受影响（直接 include `rk3588.dtsi`，不经过 `rk3588s-ip.dtsi`�
 ⇒ 影响：该 DTB 目前无法正常启动 —— 没有 eMMC 就找不到根文件系统，
 没有 uart2 就没有串口日志，没有 rk806 则 CPU/DDR 供电不受内核管理。
 
-**u-boot 侧不受影响**：`patches-uboot/109` 的 RK3588 板级 dts 是独立写的，
-eMMC / TF 卡 / uart2 都按厂商 dtb 的值补上了。**但内核侧的 dts 需要单独修**
-（补 rk806 的 34 路 regulator + 三个存储/串口节点，约 250 行）。
+**已于 2026-10-10 修复**：把 `rk3588-hinlink-h89k.dts` 重构为
+`#include "rk3588-hinlink.dtsi"` + 只写差异（因为 H88K 与 H89K 同源，
+见 §4.10），顺带修掉另外几处错误：
+
+| # | 旧写法（错） | 新写法（对） | 后果 |
+|---|---|---|---|
+| 1 | 无 rk806 / rk8602 / rk8603 | 由 dtsi 提供 | CPU/NPU 供电不受内核控制 |
+| 2 | 无 `&sdhci` / `&sdmmc` / `&uart2` | 由 dtsi 提供 | **找不到根文件系统、无串口输出** |
+| 3 | 无 `&pcie2x1l2` | 本文件补上 | 少一个 2.5G 网口 |
+| 4 | `snps,reset-gpio = <&pinctrl RK_PB3 …>` | dtsi 里是 `<&gpio4 RK_PB3 …>` | PHY 复位脚指向错误对象 |
+| 5 | 风扇写成 `&pwm3` | **pwm14**（厂商 `/pwm@febf0020`）| 风扇 PWM 通道错 |
+| 6 | 模组 IO 写成 `ACTIVE_LOW` | **HIGH 有效**（厂商 dtb 实证）| 模组不上电 / 无法复位 |
+| 7 | 有 LED pinctrl 但无 leds 节点 | 由 dtsi 提供（GPIO 相同）| LED 不亮 |
+
+**验证**：真实 dtc 编译 **PASS**（134257 B）；反编译核查
+`mmc@fe2e0000`(eMMC) / `mmc@fe2c0000`(TF) / `serial@feb50000`(uart2) /
+`pcie@fe190000`(第 3 个 2.5G) 均为 **okay**，`ethernet@fe1c0000`(gmac1)
+为 **disabled**（与厂商 dtb 一致），rk806 / rk8602 / rk8603 / hym8563 /
+es8388 / pwm-fan / st7789v 全部就位。
 | 7 | H28K 的 mmc 别名顺序与厂商相反（`mmc0=sdhci` vs 厂商 `mmc0=sdmmc`） | TF 卡插上后固件不识别 |
 
 同时修正了 `check_port_count.py` 自身的 4 个缺陷（否则上面这些根本查不出来）：
