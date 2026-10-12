@@ -10,12 +10,25 @@
 
 ## ★ 0. 默认固件的预置策略（2026-10-10 起）
 
-从这一版起，**所有 18 个机型共用同一套预置包**（`Device/hinlink_common`），
+从这一版起，**所有机型（现 16 个）共用同一套预置包**（`Device/hinlink_common`），
 不再按机型裁剪无线驱动：
 
 * **无线网卡驱动全带上**（M.2/PCIe + SDIO + USB 三条总线穷举）
   ⇒ 一块固件，插 AP6256 / AIC8800 / 任意 mt76·rtw88·rtw89 模组都能认，
   不必先知道机器是哪一代。
+* ★ **驱动 ≠ 固件：固件包必须单独装**（2026-10-12 补）
+  `kmod-mt7915e` 这**一个驱动同时支持 MT7915 与 MT7916**，但它
+  **DEPENDS 里不含任何固件包**，必须显式加：
+  `kmod-mt7915-firmware`（`mt7915_{wa,wm,rom_patch}.bin`）+ 
+  `kmod-mt7916-firmware`（`mt7916_{wa,wm,rom_patch}.bin`）。
+  漏了就会出现「驱动加载了但没有固件可用」：
+  ```
+  dmesg | grep -i "firmware load"
+  → Direct firmware load for mediatek/mt7916_wm.bin failed
+  ```
+  H69K / H88K / H89K 的 M.2 / PCIe 位插 MT7916 就靠这两个。
+  （对照：`kmod-mt7921e` 的 DEPENDS 自带 `kmod-mt7921-firmware`，
+  所以那一路不用手写 —— mt7915e 就是漏在这一条上。）
 * **风扇驱动全带上**：`kmod-hwmon-pwmfan` + `kmod-hwmon-gpiofan` +
   `kmod-thermal` + `fancontrol` + `luci-app-fancontrol`（含简体中文）
   ⇒ LuCI「系统 → 风扇控制」直接可调。
@@ -210,9 +223,23 @@ cooling-maps 合并（CPU 降频 + 风扇调速）。
 | H68K a / a-usb | **AP6256** | `sdio0`? | ✅ | ✅ | — | 见下 |
 | H68K new | **AIC8800** | `sdio0` | ✅ | ✅ | — | `kmod-aic8800-sdio` |
 | H69K / H69K-mini | AIC8800 | `sdio0` | ✅ | ✅ | — | `kmod-aic8800-sdio` |
-| **H68K c / c-usb3 / d / d-usb** | M.2 位 | — | ❌ | ❌ | ❌ | 无 |
+| **H68K c-d-f / c-d-f-usb** | M.2 位 | — | ❌ | ❌ | ❌ | 无 |
 | H66K | — | — | ❌ | ❌ | ❌ | 无 |
 | H88K v2/v3 | M.2 位 | — | ❌ | ❌ | ❌ | 无 |
+
+> ⚠️ 表里「M.2 位 / 驱动包 = 无」指的是**板上没有焊死的 WiFi 芯片**
+> （走 M.2 / PCIe 扩展位，由用户自行插卡）。**固件里的驱动是全的**（见 §0）：
+> M.2/PCIe 位的 `mt7921e` / `mt7925e` / **`mt7915e`（一个驱动同时支持
+> MT7915 与 MT7916）** / `mt7615e` / rtw88 / rtw89 全部带上，插卡即可用。
+>
+> ★ **MT7915 / MT7916 还要额外两个固件包**（`kmod-mt7915-firmware` +
+> `kmod-mt7916-firmware`）—— 因为 `kmod-mt7915e` 的 DEPENDS 里**不含固件**。
+> 2026-10-12 之前漏装这两个，插 MT7916 会报：
+> ```
+> Direct firmware load for mediatek/mt7916_wm.bin failed
+> ```
+> 现在固件里已含 `mt7915_{wa,wm,rom_patch}.bin` 与 `mt7916_{wa,wm,rom_patch}.bin`
+> 六个文件（约 3.8 MB 未压缩）。**H69K / H88K / H89K 插 MT7916 就靠这一组。**
 
 ### ★ H28K 无WiFi 的厂商证据
 

@@ -8,7 +8,9 @@
 #
 # 「无线网卡」按三类总线穷举（本系列机器同时具备 M.2/PCIe、SDIO、USB）：
 #
-#   M.2 / PCIe 位： MediaTek mt7921e(mt7921/7922) / mt7925e / mt7915e / mt7615e
+#   M.2 / PCIe 位： MediaTek mt7921e(mt7921/7922) / mt7925e / mt7615e
+#                  mt7915e + mt7915-firmware + mt7916-firmware
+#                  ★ 一个驱动两种芯片；固件包必须显式装（详见下面那段注释）
 #                  Realtek rtw88(8821ce/8822be/8822ce) / rtw89(8851be/8852ae/
 #                  8852be/8852ce/8922ae)
 #   SDIO 板载：    MediaTek mt7921s / mt7663s / Realtek rtw88-8822cs
@@ -39,7 +41,16 @@ define Device/hinlink_common
 	luci-mod-network luci-mod-status luci-mod-system luci-theme-bootstrap \
 	wpad-basic-mbedtls
   # --- 无线网卡：M.2 / PCIe ---
+  #   ★ kmod-mt7915e 这**一个驱动同时支持 MT7915 与 MT7916 两种芯片**，
+  #     但固件是**分开的两个包**，而 kmod-mt7915e 的 DEPENDS 里
+  #     **不含任何固件包** —— 必须显式装，否则驱动能加载但没固件可用：
+  #         dmesg | grep -i "firmware load"
+  #         → Direct firmware load for mediatek/mt7916_wm.bin failed
+  #     H69K 的 M.2 / PCIe 位插 MT7916（或 MT7915）就靠这两个包。
+  #     （对照：kmod-mt7921e 的 DEPENDS 自带 kmod-mt7921-firmware，
+  #       所以那一路不用手写 —— 2026-10-12 之前 mt7915e 就是漏在这里。）
   DEVICE_PACKAGES += kmod-mt7921e kmod-mt7925e kmod-mt7915e kmod-mt7615e \
+	kmod-mt7915-firmware kmod-mt7916-firmware \
 	kmod-rtw88-8821ce kmod-rtw88-8822be kmod-rtw88-8822ce \
 	kmod-rtw89-8851be kmod-rtw89-8852ae kmod-rtw89-8852be \
 	kmod-rtw89-8852ce kmod-rtw89-8922ae

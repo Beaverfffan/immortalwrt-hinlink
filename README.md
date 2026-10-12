@@ -941,6 +941,39 @@ phandle 确实指向供电级 / 无 `rfkill-gpio` 残留 / 无 `gpio-hog` 残留
 
 ---
 
+### 4.16 ★ 2026-10-12 补装 MT7915 / MT7916 固件包
+
+用户反馈「69k 需要打包 mt7916 驱动」。查证结果：**驱动本来就在，固件不在**。
+
+`kmod-mt7915e` 这**一个驱动同时支持 MT7915 与 MT7916 两种芯片**，
+但 OpenWrt 把**固件拆成两个独立包**，而 **`kmod-mt7915e` 的 DEPENDS 里
+不含任何固件包** —— 必须显式写进 `DEVICE_PACKAGES`。
+
+| 包 | 内容 | 体积（未压缩） |
+|---|---|---|
+| `kmod-mt7915-firmware` | `mt7915_{wa,wm,rom_patch}.bin` | ≈ 1.5 MB |
+| `kmod-mt7916-firmware` | `mt7916_{wa,wm,rom_patch}.bin` | ≈ 2.3 MB |
+
+漏装的症状（插卡后）：
+
+```
+dmesg | grep -i "firmware load"
+→ Direct firmware load for mediatek/mt7916_wm.bin failed
+```
+
+**对照**：`kmod-mt7921e` 的 DEPENDS 自带 `kmod-mt7921-firmware`，
+所以 mt7921 / mt7922 那一路从来没出过问题 —— **mt7915e 就是漏在这一条上**。
+
+**改动**：`Device/hinlink_common` 的 M.2/PCIe 段补上这两个包
+（全系 16 机型共用；未压缩约 +3.8 MB，gz 后影响很小）。
+
+**验证**：`BUILD_EXIT=0`；rootfs 实测 `/lib/firmware/mediatek/` 下 6 个文件
+齐全（`mt7915_{rom_patch,wa,wm}.bin` + `mt7916_{rom_patch,wa,wm}.bin`）；
+manifest 里 `kmod-mt7915e` / `kmod-mt7915-firmware` / `kmod-mt7916-firmware`
+三个包都在。
+
+---
+
 ## 五、仓库结构
 
 ```
