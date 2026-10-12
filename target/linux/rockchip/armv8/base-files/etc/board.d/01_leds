@@ -64,30 +64,36 @@ case $board in
 		ucidef_set_led_netdev "wan" "WAN" "blue:wan" "eth0"
 		;;
 
-	# ---- H68K C/D/F 四网口（2022 版）：WAN = eth1 ----
-	# 同时收上游/厂商的统称 hinlink,h68k（上游 mainline DTS 用的 compatible）
+	# ---- H68K 四网口老机器（c / c-usb / c-usb3 / d / d-usb）：WAN = eth0 ----
+	# ★ 2026-10-12 按实机更正：原来写 eth1（照抄 2022 厂商固件），实机是 eth0。
+	# 同时收上游/厂商的统称 hinlink,h68k / linkstar,h68k（通用镜像兜底；
+	# board_name 取的是 compatible 的**第一个**串，本仓库机型走不到这组）。
 	hinlink,opc-h68k-c|\
 	hinlink,opc-h68k-c-usb|\
 	hinlink,opc-h68k-c-usb3|\
+	hinlink,opc-h68k-d|\
+	hinlink,opc-h68k-d-usb|\
 	linkstar,opc-h68k-c|\
+	linkstar,opc-h68k-d|\
 	hinlink,h68k|\
 	linkstar,h68k)
+		ucidef_set_led_netdev "wan" "WAN" "blue:wan" "eth0"
+		;;
+
+	# ---- H68K new（2023末~2024）：新一代，WAN 在 gmac1 ⇒ eth1 ----
+	hinlink,opc-h68k-new)
 		ucidef_set_led_netdev "wan" "WAN" "blue:wan" "eth1"
 		;;
 
-	# ---- H68K D（2023.4 推荐版）/ H68K new：WAN = eth0 ----
-	hinlink,opc-h68k-d|\
-	hinlink,opc-h68k-d-usb|\
-	linkstar,opc-h68k-d|\
-	hinlink,opc-h68k-new)
+	# ---- H69K 三网口：WAN = eth0（gmac0 被 disabled，gmac1 枚举成 eth0）----
+	hinlink,opc-h69k|\
+	hinlink,h69k)
 		ucidef_set_led_netdev "wan" "WAN" "blue:wan" "eth0"
 		;;
 
-	# ---- H69K 三网口 / H69K-mini 四网口：WAN = eth0（= gmac1）----
-	hinlink,opc-h69k|\
-	hinlink,h69k|\
+	# ---- H69K-mini 四网口：WAN = eth1（gmac0/gmac1 都开，WAN 在 gmac1）----
 	hinlink,opc-h69k-mini)
-		ucidef_set_led_netdev "wan" "WAN" "blue:wan" "eth0"
+		ucidef_set_led_netdev "wan" "WAN" "blue:wan" "eth1"
 		;;
 
 	# ---- H66K：两个 GMAC 都 disabled，只有 2 路 PCIe 2.5G ----

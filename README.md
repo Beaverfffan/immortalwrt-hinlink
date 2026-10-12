@@ -82,15 +82,19 @@ python3 tools/dts_syntax_check.py <dts> <include-dirs...>   # DTS 结构
 > `hinlink,opc-h68k-c-usb3` 与 `hinlink,opc-h68k-c-usb`。
 >
 > ★ **刻意不合并的重复**：`h68k-c` / `h68k-d`、`h68k-c-usb3` / `h68k-d-usb`
-> 这两组的 DTS 硬件配置也完全相同，但 **WAN 口位置不同**：
+> 这两组的 DTS 硬件描述完全相同。
+>
+> ⚠️ **2026-10-12 实机更正**：原先记的「c 系 WAN=eth1 / d 系 WAN=eth0」**是错的**
+> —— 实机 `h68k-c` 的 WAN 就是 **eth0**。更正后两组连 `02_network` 映射也一致
+> （都是 LAN `eth1 eth2 eth3` / WAN `eth0`），因此在**内容上已是真重复**；
+> 保留独立 profile 只为让「c」「d」两个型号名在固件列表里可区分，
+> 不再有「合并会接错 WAN 口」这条理由。
 >
 > ```
-> c 系（2022）  LAN eth0 eth2 eth3 / WAN eth1
-> d 系（2023.4）LAN eth1 eth2 eth3 / WAN eth0
+> a / a-usb   （2 口）      LAN eth1           / WAN eth0
+> c / c-usb3 / d / d-usb    LAN eth1 eth2 eth3 / WAN eth0
+> h68k-new    （2023末~2024）LAN eth0 eth2 eth3 / WAN eth1   ★ 全谱系唯一
 > ```
->
-> 厂商确实当两个机型卖，WAN 插在不同的物理口上 —— 属实质硬件差异，
-> 合并会导致其中一代机器的 WAN 接错口。**保持独立。**
 
 ### RK3528 — H28K / H29K / HT2（5 个机型）
 
@@ -160,18 +164,26 @@ RK3588
 
 | 机型 | LAN | WAN |
 |---|---|---|
+| **世代一（2022~2023）—— WAN 焊在 gmac0** | | |
 | h66k | `eth1` | `eth0` |
-| h68k-a / -usb | `eth1` | `eth0` |
-| h68k-c / c-usb / c-usb3 | `eth0 eth2 eth3` | `eth1` |
-| h68k-d / -usb / new | `eth1 eth2 eth3` | `eth0` |
-| h69k | `eth1 eth2` | `eth0` |
-| h69k-mini | `eth1 eth2 eth3` | `eth0` |
-| **h28k** | `eth0` | `eth1` |
-| **h29k（全系）** | `eth0` | —（单口） |
-| **ht2** | `eth0` | —（单口） |
-| **h88k-v2** | `eth1` | `eth0` |
-| **h88k-v3** | `eth1 eth2` | `eth0` |
-| **h89k** | `eth0 eth1` | `eth2` |
+| h68k-a / -a-usb | `eth1` | `eth0` |
+| h68k-c / c-usb / c-usb3 | `eth1 eth2 eth3` | `eth0` |
+| h68k-d / -d-usb | `eth1 eth2 eth3` | `eth0` |
+| **世代二（2023末~）—— WAN 焊在 gmac1** | | |
+| h68k-new | `eth0 eth2 eth3` | `eth1` |
+| h69k（三网口） | `eth1 eth2` | `eth0` ⚠️ 名字是 eth0，**芯片是 gmac1**（gmac0 被 disabled） |
+| h69k-mini | `eth0 eth2 eth3` | `eth1` |
+| **其余** | | |
+| h28k | `eth0` | `eth1` |
+| h29k（全系） | `eth0` | —（单口） |
+| ht2 | `eth0` | —（单口） |
+| h88k-v2 | `eth1` | `eth0` |
+| h88k-v3 | `eth1 eth2` | `eth0` |
+| h89k | `eth0 eth1` | `eth2` |
+
+> ⚠️ **别用「几口机型」去推 WAN**（2026-10-12 踩过）：`h69k` 与 `h69k-mini`
+> 都是 H69K 但 `h69k-mini` 的 WAN 是 `eth1`、`h69k` 是 `eth0` —— 因为
+> `h69k` 三网口版把 gmac0 disabled 了，**同一颗 gmac1 被枚举成了 eth0**。
 
 ---
 
@@ -776,6 +788,66 @@ vmlinux 实测含 fb_st7789v / fb_gc9307 / sitronix,gc9307 / sitronix,st7789v �
 ```
 
 固件清单见 `index.html`（含每机型 sizing 与 sha256）。
+
+---
+
+### 4.13 ★ 2026-10-12 实机更正：H68K 的 WAN 口是 eth0，只有 h68k-new 是 eth1
+
+**实机反馈**：`h68k-c` 刷完 WAN 变成 `eth1`，但这台老机器的 WAN 应该是 `eth0`；
+`h68k-new` 才是 `eth1` 为 WAN。
+
+**原因**：`02_network` 当初按「厂商固件代次」分了两组 ——
+
+```
+c 系（照抄 2022 fw22）  LAN eth0 eth2 eth3 / WAN eth1   ← 错的
+d 系（照抄 2023 fw23）  LAN eth1 eth2 eth3 / WAN eth0
+```
+
+实机证明 2022 固件那份记录不可信（或不是这台机器的固件版本）。**判据不是「几口」，
+而是 WAN 焊在哪颗 GMAC 上** —— 老一代 WAN 在 **gmac0**，新一代在 **gmac1**：
+
+```
+老一代：a / a-usb / c / c-usb / c-usb3 / d / d-usb        WAN = gmac0
+    a / a-usb （2 口）        LAN eth1           / WAN eth0
+    c / c-usb3 / d / d-usb    LAN eth1 eth2 eth3 / WAN eth0
+
+新一代：h68k-new / h69k / h69k-mini                        WAN = gmac1
+    h68k-new  （两 GMAC 都开）  LAN eth0 eth2 eth3 / WAN eth1
+    h69k-mini （两 GMAC 都开）  LAN eth0 eth2 eth3 / WAN eth1
+    h69k      （gmac0 关掉）    LAN eth1 eth2     / WAN eth0   ← gmac1 独占 eth0
+```
+
+⇒ `h69k` 的 WAN 名字仍是 `eth0`，但那颗芯片是 **gmac1**：因为三网口版把 gmac0
+disabled 了，gmac1 变成 `ethernet0`。**同一个逻辑、不同的 eth 名**。
+
+厂商固件原文佐证：
+
+```
+fw23      hinlink,opc-h69k|linkstar,opc-h68k|opc-h68k-c|opc-h68k-d → WAN eth0
+fw29new   hinlink,opc-h68k                       → LAN 'eth0 eth2 eth3' / WAN 'eth1'
+          hinlink,opc-h69k                       → LAN 'eth1 eth2'      / WAN 'eth0'
+```
+
+同一处映射在 **两个** board.d 文件里都有，必须一起改，否则会出现
+「网口对了但 WAN 灯跟着错的接口闪」：
+
+| 文件 | 改什么 |
+|---|---|
+| `02_network` | `ucidef_set_interfaces_lan_wan` 的 LAN/WAN 列表 |
+| `01_leds` | `ucidef_set_led_netdev "wan" ... "<netdev>"` 的 netdev 名 |
+
+**顺带的影响**：改正后 `h68k-c` 与 `h68k-d`、`h68k-c-usb3` 与 `h68k-d-usb`
+的 DTS 指纹**和** `02_network` 映射都一致了 ⇒ 内容上已是真重复。
+仍保留独立 profile（保住型号名），但 `tools/dup_scan.py` 的
+`KEEP_SEPARATE` 理由已从「WAN 口位置不同」改成「厂商按两个型号出货」。
+
+**顺手记一条方法论**：`board_name` 取的是
+`strings /proc/device-tree/compatible | head -1`（见
+`package/base-files/files/lib/preinit/02_sysinfo`）——
+即 compatible 的**第一个串**。所以 DTS 里把具体机型名放在最前、
+通用名（`hinlink,h68k` / `linkstar,h68k`）放后面是对的；
+`case` 里那两条通用名分支只对上游 `rk3568-hinlink-h68k.dts`
+（compatible 只有 `hinlink,h68k`）这类镜像兜底，本仓库机型永远走不到。
 
 ---
 
@@ -1384,8 +1456,9 @@ python3 tools/dup_scan.py .
 => ⚠️  **已确认不合并**（映射不同，属实质硬件差异）
 ```
 
-本仓库里 `h68k-c` / `h68k-d` 就是「DTS 相同但 WAN 口位置不同」的典型：
-合并会让其中一代机器的 WAN 接错口。这类例外记在工具的 `KEEP_SEPARATE` 里。
+本仓库里 `h68k-c` / `h68k-d` 是「DTS 与映射都相同、但刻意保留两个型号名」的例子
+（2026-10-12 之前记的理由是「WAN 口位置不同」，已被实机推翻 —— 见 §4.13）。
+这类例外记在工具的 `KEEP_SEPARATE` 里。
 
 ### 使用 fdtdump.py 查证硬件参数
 

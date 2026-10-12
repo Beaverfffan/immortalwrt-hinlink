@@ -12,7 +12,8 @@
  *     hinlink,opc-h68k-c-usb3   —— 2022.8 的 c-usb3 改型
  *   两者都是「C/D/F 基础上把 SATA 口改成 USB 3.0」，DTS 无任何差异，
  *   故合并为一份 DTS，用两个 compatible 兼容旧固件的 board 匹配。
- *   两个标识的 02_network 映射本来就一致（LAN eth0 eth2 eth3 / WAN eth1）。
+ *   两个标识的 02_network 映射一致（LAN eth1 eth2 eth3 / **WAN eth0**）。
+ *   ⚠️ 2026-10-12 实机更正：原来写的是「LAN eth0 eth2 eth3 / WAN eth1」，错了。
  *
  * 2022.8 版：C/D/F 基础上改USB 3.0
  */

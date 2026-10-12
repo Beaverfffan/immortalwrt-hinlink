@@ -7,19 +7,21 @@ HinLink 的同一块板子常被起多个文件名（改型、批次年份、厂
 导致仓库里出现多份 DTS，但它们的**硬件配置部分完全一样**，
 只有 model / compatible 字符串不同 —— 这对用户毫无价值，只是维护负担。
 
-★ 已人工确认「不合并」的例外（2026-10-09）
+★ 已人工确认「不合并」的例外
 --------------------------------------
 `h68k-c` 与 `h68k-d`、`h68k-c-usb3` 与 `h68k-d-usb` 这两组的 DTS 硬件配置
-也完全相同，但 **02_network 的 WAN 口位置不同**：
+完全相同。
 
-    c 系  LAN eth0 eth2 eth3 / WAN eth1
-    d 系  LAN eth1 eth2 eth3 / WAN eth0
+- 2026-10-09 记的理由是「02_network 的 WAN 口位置不同」（c: WAN=eth1，
+  d: WAN=eth0）—— **该理由已于 2026-10-12 被实机推翻**：h68k-c 的 WAN
+  实际就是 **eth0**，更正后两组映射也一致（都是 LAN eth1 eth2 eth3 /
+  WAN eth0）。全 H68K 谱系里只有 **h68k-new 是 WAN=eth1**。
+- 现在保留独立 profile 的唯一理由是**型号名**：厂商 2022 与 2023.4 两代
+  确实按两个型号出货，固件列表里保留 c/d 两个条目对用户更清楚。
 
-厂商 2022 与 2023.4 两代固件确实当两个机型卖，WAN 插在不同的物理口上，
-属于实质硬件差异，**保持独立不合并**。
-
-⇒ 本工具扫出重复后，**必须再查02_network 的接口映射**才能决定是否合并。
-   映射一致 → 可合并；映射不同 → 不能合并。
+⇒ 本工具扫出重复后，**必须再查 02_network 的接口映射**才能决定是否合并。
+   映射一致 → 可合并（除非像 c/d 这样为了保住型号名而刻意保留）；
+   映射不同 → 不能合并。
 
 判定方法
 --------
@@ -85,8 +87,9 @@ def normalize(text):
 
 NET = os.path.join(root, 'target/linux/rockchip/armv8/base-files/etc/board.d/02_network')
 
-# 已人工确认「不合并」的例外：DTS 相同但 02_network 映射不同。
-# 见文件头说明。这些组的 02_network 映射不一致，属实质硬件差异。
+# 已人工确认「不合并」的例外：DTS 与 02_network 映射都相同，
+# 但厂商按两个型号出货，为保住固件列表里的型号名而刻意保留独立 profile。
+# （2026-10-12：原先的理由「WAN 口位置不同」已被实机推翻，见文件头说明。）
 KEEP_SEPARATE = {
     ('rk3568-hinlink-h68k-c.dts', 'rk3568-hinlink-h68k-d.dts'),
     ('rk3568-hinlink-h68k-c-usb3.dts', 'rk3568-hinlink-h68k-d-usb.dts'),
@@ -201,7 +204,7 @@ def main():
         same = (na == nb) and not na.startswith('(02_network')
 
         if (a, b) in KEEP_SEPARATE:
-            verdict = '⚠️  **已确认不合并**（02_network 映射不同，属实质硬件差异）'
+            verdict = '⚠️  **刻意保留独立**（映射一致，但厂商按两个型号出货，保留型号名）'
         elif same:
             verdict = '✅ **可合并**（02_network 映射一致）'
         elif na.startswith('(02_network') or nb.startswith('(02_network'):

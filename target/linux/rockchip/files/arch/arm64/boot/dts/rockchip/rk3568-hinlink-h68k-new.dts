@@ -8,6 +8,9 @@
  * 蓝本：OpenWrt 主线 rk3568-hinlink-h68k.dts
  *
  * 2023末改用 H69K 底板出货；带 AIC8800 SDIO WiFi
+ *   ★ 全 H68K 谱系里**唯一**把 WAN 接在 gmac1 上的一代：
+ *     网口：LAN = eth0 eth2 eth3 / **WAN = eth1**
+ *   （其余老机器 a / c / d 系全部 LAN=eth1 … / WAN=eth0）
  */
 
 /dts-v1/;

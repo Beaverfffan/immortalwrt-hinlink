@@ -8,6 +8,8 @@
  * 蓝本：OpenWrt 主线 rk3568-hinlink-h68k.dts
  *
  * 2022 版：2×RTL8125 2.5G + 2×千兆，无板载 WiFi
+ *   网口：LAN = eth1 eth2 eth3 / **WAN = eth0**
+ *   （2026-10-12 按实机更正：旧版照抄 2022 厂商固件写成 WAN=eth1，实机是 eth0）
  *
  * ★ SATA 变体：combphy0 让给 SATA，USB3.0 不可用（见文件末尾说明）
  */

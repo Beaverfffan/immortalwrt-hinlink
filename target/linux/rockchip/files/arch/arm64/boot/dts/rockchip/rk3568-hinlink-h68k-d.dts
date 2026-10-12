@@ -7,7 +7,10 @@
  * 硬件事实来源：厂商 2023 R23.4.20 固件 dtb（已解包反编译逐项核对）
  * 蓝本：OpenWrt 主线 rk3568-hinlink-h68k.dts
  *
- * 2023.4 推荐版：2×RTL8125 2.5G，WAN 从 eth1 改为 eth0（网口全识别）
+ * 2023.4 推荐版：2×RTL8125 2.5G
+ *   网口：LAN = eth1 eth2 eth3 / **WAN = eth0**（与 c 系一致）
+ *   ⚠️ 旧注释写「WAN 从 eth1 改为 eth0」，2026-10-12 实机更正：c 系也是 eth0，
+ *      全系只有 h68k-new 是 WAN = eth1。
  *
  * ★ SATA 变体：combphy0 让给 SATA，USB3.0 不可用（见文件末尾说明）
  */

@@ -19,12 +19,21 @@
 #   RK3528: gmac1=eth0（单口）
 #   RK3588: gmac0=eth0  pcie2x1l1=eth1  pcie2x1l2=eth2
 #
-# ★ H68K 的 WAN 口位置随固件代次变化（这是厂商自己改的，不是硬件差异）：
-#     2022 固件（fw22）      -a: WAN=eth0        -c: WAN=eth1
-#     2023 固件（fw23）      -a: WAN=eth0        -c/-d/-h69k: WAN=eth0
-#     2025 固件（fw29new）   opc-h68k:           WAN=eth1
-#   本仓库按「机型出货年代」保留差异：-c 用 2022 值（WAN=eth1），
-#   -d / -new 用 2023 值（WAN=eth0）。⚠️ 实机请用 `ip -br a` 确认哪个口是 WAN。
+# ★ H68K 的 WAN 口位置（2026-10-12 按**实机**更正）：
+#     老机器（2022~2023）：a / a-usb / c / c-usb / c-usb3 / d / d-usb → WAN = eth0
+#     H68K new（2023末~2024）                                       → WAN = eth1
+#
+#   ⚠️ 上一版把 c 系列按「2022 厂商固件 WAN=eth1」配了，实机反馈 **c 是 WAN=eth0**，
+#      已改正：eth0 = gmac0、eth1 = gmac1。**只有 h68k-new 这一代**把 WAN 做在
+#      gmac1 上，其余老机器 WAN 都在 gmac0。
+#
+#   ⚠️ 通用 compatible `hinlink,h68k` / `linkstar,h68k` 归入「老机器」一组。
+#      依据：`/lib/preinit/02_sysinfo` 用
+#        strings /proc/device-tree/compatible | head -1
+#      取**第一个** compatible 作 board_name，而本仓库 18 个机型的第一个串
+#      都是具体机型名（hinlink,opc-h68k-c 之类），所以这一组实际走不到；
+#      它只为上游 `rk3568-hinlink-h68k.dts`（compatible 只有 hinlink,h68k）
+#      这类通用镜像兜底。
 
 . /lib/functions/uci-defaults.sh
 . /lib/functions/system.sh
@@ -43,33 +52,43 @@ rockchip_setup_interfaces() {
 		ucidef_set_interfaces_lan_wan 'eth1' 'eth0'
 		;;
 
-	# ---- H68K C/D/F（2022 四网口，2×RTL8125）：WAN = eth1 ----
+	# ---- H68K C/D/F（2022 四网口，2×RTL8125）+ D（2023.4）：WAN = eth0 ----
+	# 旧版这里写的是 WAN=eth1（照抄 2022 厂商固件），实机反馈 c 是 WAN=eth0，
+	# 2026-10-12 更正。四网口机型统一 LAN=eth1 eth2 eth3 / WAN=eth0。
 	hinlink,opc-h68k-c|\
 	hinlink,opc-h68k-c-usb|\
 	hinlink,opc-h68k-c-usb3|\
-	linkstar,opc-h68k-c|\
-	hinlink,h68k|\
-	linkstar,h68k)
-		ucidef_set_interfaces_lan_wan 'eth0 eth2 eth3' 'eth1'
-		;;
-
-	# ---- H68K D（2023.4 推荐版）/ H68K new：WAN = eth0 ----
 	hinlink,opc-h68k-d|\
 	hinlink,opc-h68k-d-usb|\
+	linkstar,opc-h68k-c|\
 	linkstar,opc-h68k-d|\
-	hinlink,opc-h68k-new)
+	hinlink,h68k|\
+	linkstar,h68k)
 		ucidef_set_interfaces_lan_wan 'eth1 eth2 eth3' 'eth0'
 		;;
 
-	# ---- H69K（三网口）：板载 = gmac1(eth0)，2×PCIe 2.5G = eth1/eth2 ----
+	# ---- H68K new（2023末~2024）：新一代，WAN 在 gmac1 ----
+	#   两个 GMAC 都开 ⇒ gmac0=eth0、gmac1=eth1 ⇒ WAN = eth1
+	hinlink,opc-h68k-new)
+		ucidef_set_interfaces_lan_wan 'eth0 eth2 eth3' 'eth1'
+		;;
+
+	# ---- H69K（三网口）：gmac0 被 disabled，只剩 gmac1 → 枚举成 eth0 ----
+	#   gmac1 = eth0（板载），2×PCIe 2.5G = eth1/eth2
+	#   ★ 新一代的 WAN 都接在 gmac1 上 ⇒ 本机 WAN = eth0（因为 gmac1 就是 eth0）
 	hinlink,opc-h69k|\
 	hinlink,h69k)
 		ucidef_set_interfaces_lan_wan 'eth1 eth2' 'eth0'
 		;;
 
 	# ---- H69K-mini（四网口 = H68K max）----
+	#   ★ 与 H69K 三网口版的关键差别：这里 gmac0 **也开着**
+	#     ⇒ gmac0 = eth0、gmac1 = eth1，2×PCIe 2.5G = eth2/eth3
+	#   ★ 与 h68k-new 同一代、同一网络构成（2×GMAC + 2×RTL8125）
+	#     ⇒ 按「新一代 WAN = gmac1」的同一逻辑，WAN = **eth1**
+	#   （2026-10-12 更正：原来抄成 LAN eth1 eth2 eth3 / WAN eth0）
 	hinlink,opc-h69k-mini)
-		ucidef_set_interfaces_lan_wan 'eth1 eth2 eth3' 'eth0'
+		ucidef_set_interfaces_lan_wan 'eth0 eth2 eth3' 'eth1'
 		;;
 
 	# ---- H66K：两个 GMAC 都 disabled（厂商 2024 dtb 实证），
