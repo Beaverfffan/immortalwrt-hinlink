@@ -64,7 +64,7 @@
 
 
 	/*
-	 * ============ 5G 模组：上电 + 复位（两级 regulator-fixed）============
+	 * ============ 5G 模组：供电（regulator）+ 复位（rfkill-gpio）============
 	 *
 	 * 硬件（厂商 H29K 固件 dtb f3_318a000_40194.dtb，
 	 * model="HINLINK H29K Board"，逐字段实证）：
@@ -76,35 +76,29 @@
 	 *         power-gpios = <&gpio4 RK_PB5 GPIO_ACTIVE_LOW>;   ← 供电
 	 *     };
 	 *
-	 * ★ 为什么不能照抄这个 rfkill-gpio 段：
-	 *   1) 6.18 主线的 net/rfkill/rfkill-gpio.c 只 request 两个脚：
-	 *          devm_gpiod_get_optional(dev, "reset",    GPIOD_ASIS)
-	 *          devm_gpiod_get_optional(dev, "shutdown", GPIOD_ASIS)
-	 *      **没有 "power"**。`power-gpios` 会被完全忽略 ——
-	 *      模组供电脚 GPIO4_B5 在内核里从来没人驱动过。
-	 *   2) 顺序不可控：rfkill-gpio 是 platform driver，device_initcall
-	 *      阶段 probe 时就把 reset 脚定向并拉到工作态；而
-	 *      regulator-always-on 的 enable 发生在更晚的 late_initcall_sync
-	 *      （regulator_late_init）⇒「复位先于上电」，复位等于没做。
+	 * 厂商这段**不能直接照抄**，两个坑：
+	 *   1) `power-gpios` 在 6.18 上**没有任何实现** ——
+	 *      net/rfkill/rfkill-gpio.c 只 request `reset` / `shutdown`。
+	 *      ⇒ 供电脚 GPIO4_B5 得另找主人，本文件交给 vcc3v3_modem regulator。
+	 *   2) 属性名变了：6.18 对 DT 节点读 `label` / `radio-type`，
+	 *      厂商写的 `name` / `type` 会被忽略（type 退化成 RFKILL_TYPE_ALL，
+	 *      按 type 就找不到设备）。
 	 *
-	 * ⇒ 统一改成两级 regulator-fixed，与 H69K / H88K / H89K 完全同款：
-	 *     ① vcc3v3_modem 先 enable（GPIO4_B5，低电平使能）
-	 *     ② modem_enable 靠 vin-supply 依赖它，供电稳定后才 enable
-	 *        （GPIO4_B4，低电平使能 = 复位释放）
-	 *   内核 regulator core 靠 vin-supply 保证「先上电、后释放复位」。
+	 * 分工（详见 docs/HARDWARE.md §四、§4.9）：
+	 *   · `vcc3v3_modem`（regulator，GPIO4_B5）—— 供电，常开
+	 *   · `rfkill-modem`（rfkill-gpio，GPIO4_B4）—— 复位，**可软复位**
+	 *       用户态：echo 0 > /sys/class/rfkill/rfkillN/state   （拉复位）
+	 *               echo 1 > /sys/class/rfkill/rfkillN/state   （释放）
+	 *       已封装成 `/etc/init.d/hinlink-modem reset`。
 	 *
-	 * ★★ 极性只由 `enable-active-high` 决定，不能凭 GPIO_ACTIVE_LOW 猜 ★★
+	 * ★★ 极性：只由 `enable-active-high` 决定，不能凭 GPIO_ACTIVE_LOW 猜 ★★
 	 *   6.18 的 drivers/gpio/gpiolib-of.c 里有一张极性映射表，注释原文：
 	 *     "The regulator GPIO handles are specified such that the presence
 	 *      or absence of enable-active-high solely controls the polarity of
 	 *      the GPIO line. Any phandle flags must be actively ignored."
-	 *   ⇒ 下面两个节点**都不写** enable-active-high = 低电平使能
+	 *   ⇒ 下面的 vcc3v3_modem **不写** enable-active-high = 低电平使能
 	 *     （与厂商 rfkill 段里 GPIO_ACTIVE_LOW 表达的意图一致）。
-	 *   写了 enable-active-high 会变成高电平使能，模组将无法上电。
-	 *
-	 * ⚠️ 代价：失去 /dev/rfkill 的 wwan 软开关。
-	 *   需要软开关时把下面两段注释掉、恢复上面的 rfkill 段，
-	 *   但必须接受「power-gpios 无效 + 复位先于上电」这两个问题。
+	 *     写了 enable-active-high 会变成高电平使能，模组将无法上电。
 	 */
 	vcc3v3_modem: vcc3v3-modem {
 		compatible = "regulator-fixed";
@@ -120,16 +114,44 @@
 		pinctrl-0 = <&modem_power_en>;
 	};
 
-	modem_enable: modem-enable {
-		compatible = "regulator-fixed";
-		regulator-name = "modem_enable";
-		gpio = <&gpio4 RK_PB4 GPIO_ACTIVE_LOW>;   /* 仅语义标注，内核忽略 flag */
-		regulator-always-on;
-		regulator-boot-on;
-		regulator-min-microvolt = <3300000>;
-		regulator-max-microvolt = <3300000>;
-		startup-delay-us = <2000000>;             /* 模组启动 2s，与 H69K 一致 */
-		vin-supply = <&vcc3v3_modem>;             /* ★ 顺序保证：先供电、后复位 */
+	/*
+	 * ============ 5G 模组复位 —— 交给 rfkill-gpio，换来「软复位」============
+	 *
+	 * 供电仍由上面的 vcc3v3_modem regulator 负责（内核保证上电）；
+	 * 复位脚 GPIO4_B4 交给 rfkill-gpio。
+	 *
+	 * ★ 为什么要交给 rfkill-gpio：regulator-fixed 和 rfkill-gpio 都会
+	 *   **占用**这个 GPIO（用户态 export 必 EBUSY），但 rfkill-gpio 在
+	 *   /sys/class/rfkill/ 下留了一个**可写**的 state 属性 ——
+	 *   6.18 net/rfkill/core.c: `static DEVICE_ATTR_RW(state)`，其
+	 *   state_store() 会调 rfkill_set_block() → rfkill_gpio_set_power()：
+	 *
+	 *       echo 0 > /sys/class/rfkill/rfkillN/state   → blocked=1
+	 *             → gpiod_set_value(reset_gpio, 0)     = 复位有效
+	 *       echo 1 > /sys/class/rfkill/rfkillN/state   → blocked=0
+	 *             → gpiod_set_value(reset_gpio, 1)     = 复位释放
+	 *
+	 *   ⇒ 0 → 等一会儿 → 1 就是一次完整的复位脉冲，而且**不需要装
+	 *     rfkill 命令**（纯 sysfs）。已封装成 /etc/init.d/hinlink-modem reset。
+	 *
+	 * ⚠️ 属性名必须是 `label` + `radio-type`
+	 *   6.18 的 rfkill_gpio_probe() 对 DT 节点读的是：
+	 *       name_property = "label";   type_property = "radio-type";
+	 *   （只有非 DT 路径才读 "name" / "type"）。
+	 *   厂商 dtb 写的是 `type = "wwan"` —— 在老内核有效，在 6.18 **被忽略**，
+	 *   type 退化成 RFKILL_TYPE_ALL，按 type 查找就找不到设备了。
+	 *
+	 * ⚠️ 不要再写 `power-gpios` —— 6.18 的 rfkill-gpio 只 request
+	 *   `reset` / `shutdown`，`power` 无任何实现（见 docs/HARDWARE.md §4.4）。
+	 *
+	 * 极性：厂商 dtb 标 GPIO_ACTIVE_LOW。unblock 时 gpiod_set_value(1)
+	 *   → 物理**低** = 模组工作；block 时物理**高** = 复位。
+	 */
+	rfkill-modem {
+		compatible = "rfkill-gpio";
+		label = "rfkill-modem";
+		radio-type = "wwan";
+		reset-gpios = <&gpio4 RK_PB4 GPIO_ACTIVE_LOW>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&modem_reset_en>;
 	};

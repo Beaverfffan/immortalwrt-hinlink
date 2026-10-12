@@ -87,46 +87,57 @@
 	};
 
 	/*
-	 * ============ 5G 模组复位（第二级，第一级是下面的 vcc3v3_modem）============
+	 * ============ 5G 模组复位 —— 交给 rfkill-gpio，换来「软复位」============
 	 *
 	 * 厂商 H89K 固件 dtb（fw89k/dtb/f3_24c8fc8_88036.dtb，model="HINLINK H89K"）
-	 * 原文：
+	 * 原始做法是把复位脚也做成 regulator：
 	 *     modem-enable {
 	 *         compatible = "regulator-fixed";
 	 *         enable-active-high;
-	 *         gpios = <&gpio4 RK_PC6 GPIO_ACTIVE_HIGH>;   // 高位 = 复位释放
+	 *         gpios = <&gpio4 RK_PC6 GPIO_ACTIVE_HIGH>;   // 高 = 复位释放
 	 *         startup-delay-us = <0x1e8480>;              // 2 秒
 	 *         vin-supply = <&vcc_3v3_s3>;
 	 *     };
+	 * 那样只能"开机释放一次"，**没有任何软复位手段**。
 	 *
-	 * ★★ 极性只由 `enable-active-high` 决定，不能凭 GPIO_ACTIVE_HIGH 猜 ★★
-	 *   6.18 的 drivers/gpio/gpiolib-of.c 注释原文：
-	 *     "The regulator GPIO handles are specified such that the presence
-	 *      or absence of enable-active-high solely controls the polarity of
-	 *      the GPIO line. Any phandle flags must be actively ignored."
-	 *   ⇒ 本节点有 enable-active-high = 高电平使能（与厂商一致，勿删）。
+	 * ★ 改用 rfkill-gpio：供电脚仍由下面的 vcc3v3_modem 管（内核保证上电），
+	 *   复位脚 GPIO4_C6 交给 rfkill-gpio —— 它在 /sys/class/rfkill/ 下
+	 *   留了一个**可写**的 state 属性（6.18 net/rfkill/core.c:
+	 *   `static DEVICE_ATTR_RW(state)`），state_store() 会走
+	 *   rfkill_set_block() → rfkill_gpio_set_power()：
 	 *
-	 * ★ 与厂商的唯一差异：vin-supply 从 vcc_3v3_s3 改挂 vcc3v3_modem。
-	 *   厂商把「供电」与「复位」两路都挂在同一个 vcc_3v3_s3 上、平级无依赖，
-	 *   于是两路都在 regulator_late_init 里按注册顺序 enable —— 谁先谁后
-	 *   只取决于 DTS 节点书写顺序，**不保证「先上电、后释放复位」**。
-	 *   挂到 vcc3v3_modem 之后，regulator core 的 _regulator_enable() 会
-	 *   先递归 enable 上级电源（见 drivers/regulator/core.c），顺序由内核保证。
+	 *       echo 0 > /sys/class/rfkill/rfkillN/state  → blocked=1
+	 *             → gpiod_set_value(reset_gpio, 0)
+	 *             →（GPIO_ACTIVE_HIGH）物理低 = 复位有效
+	 *       echo 1 > /sys/class/rfkill/rfkillN/state  → blocked=0
+	 *             → 物理高 = 复位释放
+	 *
+	 *   ⇒ 0 → 等一会儿 → 1 = 一次完整的复位脉冲，**不需要装 rfkill 命令**
+	 *     （纯 sysfs）。已封装成 `/etc/init.d/hinlink-modem reset`。
+	 *
+	 * ⚠️ 属性名必须是 `label` + `radio-type`
+	 *   6.18 的 rfkill_gpio_probe() 对 DT 节点读的是：
+	 *       name_property = "label";   type_property = "radio-type";
+	 *   （只有非 DT 路径才读 "name" / "type"）。厂商 dtb 的 `type = "wwan"`
+	 *   在 6.18 **被忽略** → type 退化成 RFKILL_TYPE_ALL，按 type 找不到设备。
+	 *
+	 * ⚠️ 不要再写 `power-gpios`（6.18 的 rfkill-gpio 只 request
+	 *   `reset` / `shutdown`，无 `power` 实现，见 docs/HARDWARE.md §4.4）。
+	 *
+	 * ★ 相比上一版（复位也叫 regulator、靠 vin-supply 串时序）的取舍：
+	 *   内核不再保证"先上电、后释放复位"这个顺序 —— 但复位脚初始电平
+	 *   （unblocked → 工作态）在 device_initcall 就定好，而供电在
+	 *   late_initcall_sync 才 enable；模组上电时看到的就已经是"不复位"，
+	 *   且上电自身有 POR 复位。⇒ 开机路径依然正确。
 	 *
 	 * ⚠️ 覆盖机型：H88K v2 / H88K v3 / H89K（三个都 include 本 dtsi，
-	 *   且都没有覆盖这两个节点）。改这里等于三个机型同时改。
+	 *   且都没有覆盖这个节点）。改这里等于三个机型同时改。
 	 */
-	modem_enable: modem-enable {
-		compatible = "regulator-fixed";
-		enable-active-high;
-		regulator-always-on;
-		regulator-boot-on;
-		gpios = <&gpio4 RK_PC6 GPIO_ACTIVE_HIGH>;
-		regulator-min-microvolt = <3300000>;
-		regulator-max-microvolt = <3300000>;
-		regulator-name = "modem-enable";
-		vin-supply = <&vcc3v3_modem>;   /* ★ 顺序保证：先供电、后释放复位 */
-		startup-delay-us = <2000000>;
+	rfkill-modem {
+		compatible = "rfkill-gpio";
+		label = "rfkill-modem";
+		radio-type = "wwan";
+		reset-gpios = <&gpio4 RK_PC6 GPIO_ACTIVE_HIGH>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&modem_reset_en>;
 	};
@@ -222,9 +233,8 @@
 	};
 
 	/*
-	 * 5G 模组供电（第一级）—— 硬件的「模组电源」开关。
-	 * 第二级是上面的 modem_enable（复位释放），它靠 vin-supply 指到本节点，
-	 * 从而由内核保证「先上电、后释放复位」。
+	 * 5G 模组供电 —— 硬件的「模组电源」开关（常开，内核保证上电）。
+	 * 复位由上面的 `rfkill-modem`（rfkill-gpio）负责，可软复位。
 	 *
 	 * 厂商 H89K dtb 原文（fw89k/dtb/f3_24c8fc8_88036.dtb）：
 	 *     vcc3v3-modem {

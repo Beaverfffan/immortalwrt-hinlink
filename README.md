@@ -974,6 +974,66 @@ manifest 里 `kmod-mt7915e` / `kmod-mt7915-firmware` / `kmod-mt7916-firmware`
 
 ---
 
+### 4.17 ★ 2026-10-12 5G 软复位：复位脚改回 `rfkill-gpio`
+
+紧接 §4.15/§4.16 之后，用户问「也就是说完全不可能实现软复位吗」——
+**能**，但必须换归属：把复位脚从 `regulator-fixed` 改成 `rfkill-gpio`。
+
+#### 为什么 regulator 做不到、rfkill-gpio 可以
+
+两者都会**占用**复位脚（用户态 `export` 必 `EBUSY`），区别只在有没有
+用户态接口：
+
+| | `regulator-fixed` | `rfkill-gpio` |
+|---|---|---|
+| 用户态接口 | ❌ 无（`always-on` 还拒绝 disable） | ✅ `/sys/class/rfkill/rfkillN/state` = `DEVICE_ATTR_RW` |
+| 开机作用 | 内核 `late_initcall_sync` 释放一次 | probe（`device_initcall`）时定电平 |
+| **软复位** | ❌ | ✅ `echo 0` → 等 → `echo 1` |
+
+6.18 `net/rfkill/core.c` 里就是 `static DEVICE_ATTR_RW(state)`：
+`state_store()` → `rfkill_set_block()` → `rfkill_gpio_set_power()` →
+`gpiod_set_value(reset_gpio, …)`。**不需要装 `rfkill` 命令**（纯 sysfs）。
+
+另外两条上一轮没发现的 `rfkill-gpio` 规则：
+
+1. 6.18 对 DT 节点读的是 **`label`** / **`radio-type`**（不是 `name` / `type`）——
+   厂商 dtb 里的 `type = "wwan"` **会被忽略**，type 退化成 `RFKILL_TYPE_ALL`；
+2. `power-gpios` 在 6.18 **无任何实现**（只 request `reset` / `shutdown`）。
+
+#### 改动
+
+| 文件 | 改什么 |
+|---|---|
+| `rk3528-hinlink-h29k-{v1.3-1.14,v5-1.14,v5-1.49}.dts` | `modem_enable`(regulator) → `rfkill-modem`(rfkill-gpio)；供电保留 `vcc3v3_modem`(regulator) |
+| `rk3568-hinlink-h69k-{3eth,mini}.dts` | 唯一那路 `modem_enable`(regulator) → `rfkill-modem`(rfkill-gpio)，等效**断电重启** |
+| `rk3588-hinlink.dtsi`（H88K v2/v3 + H89K） | `modem_enable`(regulator) → `rfkill-modem`(rfkill-gpio)；供电保留 `vcc3v3_modem` |
+| **新增** `armv8/base-files/etc/init.d/hinlink-modem` | `status` / `reset` / `power-off` / `power-on` |
+| `tools/integrate.py` | 新增 `[6]`：同步 base-files 下 `init.d`/`hotplug.d`/`uci-defaults`（`board.d` 仍走合并），并强制 0755 |
+
+#### 用法
+
+```sh
+/etc/init.d/hinlink-modem reset      # 软复位（拉 300ms → 释放 → 等 2s）
+/etc/init.d/hinlink-modem status     # rfkill / regulator / USB 状态
+/etc/init.d/hinlink-modem power-off  # 只拉复位（保持）
+```
+
+时序可用环境变量覆盖：`HINLINK_MODEM_HOLD_MS`（默认 300）、
+`HINLINK_MODEM_BOOT_WAIT`（默认 2）。
+开机自动复位：在 `/etc/rc.local` 的 `exit 0` 前加 `/etc/init.d/hinlink-modem reset`。
+
+#### 取舍
+
+放弃了「内核用 `vin-supply` 串死上电→复位顺序」的确定性：
+复位脚现在在 `device_initcall`（rfkill probe）就定好工作态，
+供电在更晚的 `late_initcall_sync` 才 enable。看似顺序反了，
+但**模组上电时看到的已经是"不复位"，而且上电自身有 POR 复位** ⇒
+开机路径依然正确。换来的是运行时软复位。
+
+完整机理、三组极性表与实机验证命令见 `docs/HARDWARE.md` §四（§4.8 专讲软复位）。
+
+---
+
 ## 五、仓库结构
 
 ```

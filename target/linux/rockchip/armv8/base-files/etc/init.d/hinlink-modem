@@ -1,0 +1,156 @@
+#!/bin/sh /etc/rc.common
+#
+# HinLink 5G 模组：软复位 + 状态查询
+#
+# ============================ 机理 ============================
+# 各机型的 5G「复位 / 使能」脚在 DTS 里交给了 rfkill-gpio，
+# 内核会在 /sys/class/rfkill/ 下建一个 type=wwan 的设备。
+# 它的 state 属性是 DEVICE_ATTR_RW（6.18 net/rfkill/core.c），可写：
+#
+#   echo 0 > /sys/class/rfkill/rfkillN/state    # set_block(true)
+#        -> rfkill_gpio_set_power(blocked = 1)
+#        -> gpiod_set_value(reset_gpio, 0)       = 复位有效
+#   echo 1 > /sys/class/rfkill/rfkillN/state    # set_block(false)
+#        -> gpiod_set_value(reset_gpio, 1)       = 复位释放
+#
+# 所以「0 -> 等一会儿 -> 1」就是一次完整的硬复位脉冲。
+# ★ 不需要装 rfkill 命令，纯 sysfs（只要 root / CAP_NET_ADMIN）。
+#
+# 详见 docs/HARDWARE.md §四。
+#
+# ============================ 用法 ============================
+#   /etc/init.d/hinlink-modem status        看 rfkill / regulator / USB 状态
+#   /etc/init.d/hinlink-modem reset         软复位模组（推荐）
+#   /etc/init.d/hinlink-modem power-off     只拉复位（保持）
+#   /etc/init.d/hinlink-modem power-on      只释放复位
+#
+# 开机自启：默认 **不** 自动复位模组（start 只往 syslog 记一次状态）。
+#   想让它开机自动复位一次，在 /etc/rc.local 的 `exit 0` 之前加：
+#       /etc/init.d/hinlink-modem reset
+#   想让 start 真的跑起来（记录开机状态）：
+#       /etc/init.d/hinlink-modem enable
+#
+# 环境变量可覆盖时序：
+#   HINLINK_MODEM_HOLD_MS   复位保持时长（默认 300 ms）
+#   HINLINK_MODEM_BOOT_WAIT 复位释放后等模组启动（默认 2 s）
+#
+
+START=95
+STOP=10
+
+HOLD_MS="${HINLINK_MODEM_HOLD_MS:-300}"
+BOOT_WAIT="${HINLINK_MODEM_BOOT_WAIT:-2}"
+
+EXTRA_COMMANDS="status reset power-off power-on"
+EXTRA_HELP="	status      显示 5G 模组 rfkill / regulator / USB 状态
+	reset       软复位 5G 模组（拉复位 -> 等 -> 释放 -> 等启动）
+	power-off   只断电 / 拉复位（保持）
+	power-on    只上电 / 释放复位"
+
+# ------------------------------------------------------------------ helpers
+
+find_wwan_rfkill() {
+	local d t
+	for d in /sys/class/rfkill/rfkill*; do
+		[ -d "$d" ] || continue
+		t="$(cat "$d/type" 2>/dev/null)"
+		[ "$t" = "wwan" ] && { echo "${d##*/}"; return 0; }
+	done
+	return 1
+}
+
+rfkill_state_path() {
+	local dev
+	dev="$(find_wwan_rfkill)" || return 1
+	echo "/sys/class/rfkill/$dev/state"
+}
+
+set_rfkill() {
+	local val="$1" p
+	p="$(rfkill_state_path)" || {
+		echo "hinlink-modem: 没有 type=wwan 的 rfkill 设备" >&2
+		echo "  （该机型 DTS 未定义 rfkill-gpio，或内核没编 CONFIG_RFKILL_GPIO）" >&2
+		return 1
+	}
+	if ! echo "$val" > "$p" 2>/dev/null; then
+		echo "hinlink-modem: 写 $p 失败（需要 root / CAP_NET_ADMIN）" >&2
+		return 1
+	fi
+}
+
+msleep() {
+	if command -v usleep >/dev/null 2>&1; then
+		usleep "$(( $1 * 1000 ))"
+	else
+		sleep 1
+	fi
+}
+
+# ------------------------------------------------------------------ 子命令
+
+status() {
+	local dev p
+
+	echo "=== rfkill（type=wwan）==="
+	dev="$(find_wwan_rfkill)" || dev=""
+	if [ -n "$dev" ]; then
+		p="/sys/class/rfkill/$dev"
+		echo "  $dev  name=$(cat $p/name 2>/dev/null)  type=$(cat $p/type 2>/dev/null)"
+		echo "        state=$(cat $p/state 2>/dev/null)  soft=$(cat $p/soft 2>/dev/null)  hard=$(cat $p/hard 2>/dev/null)"
+		echo "        （state: 1 = unblocked/工作，0 = blocked/复位）"
+	else
+		echo "  （无）—— 该机型若带 5G 模组，说明 DTS 里没定义 rfkill-gpio"
+	fi
+
+	echo "=== regulator（供电，常开）==="
+	if [ -r /sys/kernel/debug/regulator/regulator_summary ]; then
+		grep -i modem /sys/kernel/debug/regulator/regulator_summary \
+			|| echo "  （无 modem 相关 regulator）"
+	else
+		echo "  （debugfs 未挂载；可先 mount -t debugfs none /sys/kernel/debug）"
+	fi
+
+	echo "=== 模组 USB 枚举 ==="
+	if [ -d /sys/bus/usb/devices ]; then
+		local hit
+		hit="$(grep -lsiE 'quectel|fibocom|foxconn|2cb7|2dee|0e8d|1bc7' \
+			/sys/bus/usb/devices/*/manufacturer \
+			/sys/bus/usb/devices/*/product 2>/dev/null \
+			| sed 's|/[^/]*$||' | sort -u | tr '\n' ' ')"
+		[ -n "$hit" ] && echo "  命中: $hit" || echo "  未匹配到常见模组 USB 描述串"
+	fi
+	local ttys
+	ttys="$(ls /dev/ttyUSB* /dev/cdc-wdm* /dev/ttyACM* 2>/dev/null | tr '\n' ' ')"
+	[ -n "$ttys" ] && echo "  字符设备: $ttys" || echo "  无 ttyUSB* / cdc-wdm* / ttyACM*"
+
+	echo "=== 相关内核日志（尾 8 行）==="
+	dmesg 2>/dev/null | grep -iE 'rfkill|modem|qmi|option|cdc|usb [0-9]' | tail -8
+}
+
+power_off() {
+	echo "拉复位 / 断电 ..."
+	set_rfkill 0
+}
+
+power_on() {
+	echo "释放复位 / 上电 ..."
+	set_rfkill 1
+}
+
+reset() {
+	echo "== 软复位 5G 模组（保持 ${HOLD_MS}ms，释放后等 ${BOOT_WAIT}s）=="
+	power_off || return 1
+	msleep "$HOLD_MS"
+	power_on || return 1
+	sleep "$BOOT_WAIT"
+	echo "完成。用 '/etc/init.d/hinlink-modem status' 或 'dmesg | grep -i usb' 看枚举。"
+}
+
+start() {
+	logger -t hinlink-modem "开机：记录 5G 模组状态"
+	status 2>&1 | logger -t hinlink-modem
+}
+
+stop() {
+	:
+}

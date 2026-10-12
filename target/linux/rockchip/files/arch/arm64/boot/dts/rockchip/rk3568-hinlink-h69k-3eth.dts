@@ -237,19 +237,44 @@
 	 *   rfkill 侧 request 会失败（-EBUSY），且语义混淆。
 	 *   详见 docs/HARDWARE.md §四。
 	 */
-	modem_enable: modem-enable {
-		compatible = "regulator-fixed";
-		/* flag 仅作语义标注，内核按 gpiolib-of 的规则忽略它 */
-		gpio = <&gpio0 RK_PC0 GPIO_ACTIVE_LOW>;
+	/*
+	 * ============ 5G 模组「供电 + 复位」单路开关 —— 交给 rfkill-gpio ============
+	 *
+	 * H69K 只有这**一个** GPIO（GPIO0_C0）。厂商与 iStoreOS 都用
+	 * regulator 把它固定使能（`always-on`），代价是**不能软复位**。
+	 *
+	 * ★ 改用 rfkill-gpio 后可以两全：
+	 *   · 开机：rfkill 默认 unblocked → gpiod_set_value(1)
+	 *     →（GPIO_ACTIVE_LOW）物理低 = 使能/工作 ⇒ 模组上电 ✓
+	 *   · 运行时：`echo 0 > /sys/class/rfkill/rfkillN/state` → 物理高
+	 *     = 断电/复位 ⇒ `echo 1` 恢复 = 一次真正的断电重启 ✓
+	 *
+	 *   6.18 net/rfkill/core.c 的 `DEVICE_ATTR_RW(state)` 就是入口，
+	 *   **不需要装 rfkill 命令**（纯 sysfs）。已封装为
+	 *   `/etc/init.d/hinlink-modem reset`。
+	 *
+	 * ★ 唯一代价：丢掉 regulator 的 `startup-delay-us = 2s`
+	 *   （rfkill-gpio 没有延时机制）。这 2 秒本来就是"上电后等模组稳定"，
+	 *   现在由 hinlink-modem 脚本在复位后等待，以及网络层枚举时自然等待。
+	 *
+	 * ★ 时序反而更早更简单：rfkill-gpio 在 `device_initcall` 阶段 probe
+	 *   就定好电平；原先 regulator 的 enable 要等到更晚的
+	 *   `late_initcall_sync`（regulator_late_init）。
+	 *
+	 * ⚠️ 属性名必须是 `label` + `radio-type`（6.18 的 DT 路径只读这两个；
+	 *   厂商 dtb 里的 `type = "wwan"` 在 6.18 会被忽略 → type 变成
+	 *   RFKILL_TYPE_ALL，按 type 就找不到设备）。详见上面 §4.2/§4.4 说明。
+	 *
+	 * ⚠️ 不要再写 `power-gpios`（6.18 无实现），也不要再加 regulator
+	 *   指向同一个脚 —— 两者会抢同一个 GPIO，rfkill 侧会 -EBUSY。
+	 */
+	rfkill-modem {
+		compatible = "rfkill-gpio";
+		label = "rfkill-modem";
+		radio-type = "wwan";
+		reset-gpios = <&gpio0 RK_PC0 GPIO_ACTIVE_LOW>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&modem_enable_en>;
-		regulator-always-on;
-		regulator-boot-on;
-		regulator-min-microvolt = <3300000>;
-		regulator-max-microvolt = <3300000>;
-		regulator-name = "modem_enable";
-		startup-delay-us = <2000000>;
-		vin-supply = <&vcc5v0_sys>;
 	};
 
 	/*
