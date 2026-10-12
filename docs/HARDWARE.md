@@ -471,6 +471,52 @@ block 并停掉相关接口 —— 这正是「复位」应有的语义，`unblo
 * 复位后模组不回来 → 极性可能反了（三个机型族极性不同，见 §4.3），
   用万用表量一下 `block` 前后该脚电平。
 
+### 4.9 时序问答：rfkill 设备会不会「加载太晚、看不到」？
+
+**不会。** 三条依据（都对着 6.18 源码逐条核过）：
+
+1. **`rfkill-gpio` 是内建（`CONFIG_RFKILL_GPIO=y`），不是模块。**
+   `module_platform_driver()` → `module_driver()` → `module_init()`；
+   内建时 `module_init(x)` 展开成 `__initcall(x)`
+   （`include/linux/module.h:89`）→ **`device_initcall`（级别 6）**。
+
+2. **所有 initcall 都在用户态之前跑完。**
+   `init/main.c` 的 `kernel_init()` → `kernel_init_freeable()`
+   （内含 `do_basic_setup()` → `do_initcalls()`，一路到
+   `late_initcall_sync` 级别 7s），之后才 `run_init_process("/sbin/init")`。
+
+3. **OpenWrt 的 preinit / rcS 全在用户态。**
+   ⇒ `/etc/init.d/*`、`/etc/rc.local`、以及你 SSH 进去敲的任何命令，
+   执行时 `/sys/class/rfkill/rfkillN/` 早就建好了。
+
+**唯一会让它真的"看不到"的情况**：内核把 `CONFIG_RFKILL_GPIO` 改成 `=m`。
+那就得等 `kmods` 服务加载，而 OpenWrt 的 kmods 时机可能晚于 `START=95`。
+
+⇒ **本仓库把这个依赖写死在内核 config 里**：
+`target/linux/rockchip/hinlink-config.append` 里有
+`CONFIG_RFKILL=y` + `CONFIG_RFKILL_GPIO=y`，不依赖上游 rockchip
+`config-6.18` 那两行（那两行虽然也是 `=y`，但属上游、可能被改）。
+
+**双保险**：`hinlink-modem` 的 `start()` 里有 **5 秒重试窗口**
+（`sleep 0.5` × 10）；仍然等不到就往 syslog 打警告，并附上
+`dmesg | grep -i rfkill` 的尾部 —— 一眼能区分「DTS 写错」还是「驱动没编」。
+
+**排查过的其它「看不到」可能**（都不成立）：
+
+| 场景 | 结论 |
+|---|---|
+| probe defer（gpio controller 未就绪） | 不会 —— rockchip gpio 在 `postcore/subsys_initcall` 就绪，早于 rfkill 的 `device_initcall` |
+| rfkill 编号不是 0（可能被别的设备占号） | 不影响 —— `hinlink-modem` 按 `type=wwan` 查找，**不写死** `rfkillN` |
+| 系统里有多个 wwan rfkill | 不会 —— 各机型 DTS 只定义 1 个 |
+| `/sys` 未挂载 | 不会 —— preinit 阶段已 mount |
+
+⚠️ **顺带一个真实的风险（不是时序问题）**：
+H69K 只有**一路** GPIO，现在它是 `rfkill-gpio` 管的 —— 也就是说
+**模组的「供电使能」也依赖这个驱动成功 probe**。若 DT 写错或驱动缺失，
+模组会连电都没有（原来 regulator `always-on` 是内核保证的）。
+所以 H69K 刷机后第一件事建议先跑
+`/etc/init.d/hinlink-modem status` 确认 `name=rfkill-modem` 在。
+
 ---
 
 ## 五、SARADC（电池电压）

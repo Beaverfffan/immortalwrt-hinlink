@@ -147,6 +147,19 @@ reset() {
 }
 
 start() {
+	# rfkill-gpio 是内建（=y，device_initcall），用户态一定晚于它 ——
+	# 理论上这里不需要等。但为防"将来它变成模块 / probe defer"这类意外，
+	# 给它一个 5 秒的重试窗口，等不到就照常记录（日志里能看出问题）。
+	local i
+	for i in 1 2 3 4 5 6 7 8 9 10; do
+		find_wwan_rfkill >/dev/null 2>&1 && break
+		sleep 0.5
+	done
+	if ! find_wwan_rfkill >/dev/null 2>&1; then
+		logger -t hinlink-modem "警告：5 秒内没等到 type=wwan 的 rfkill 设备"
+		logger -t hinlink-modem "  检查 DTS 的 rfkill-modem 节点（label / radio-type）与 CONFIG_RFKILL_GPIO=y"
+		logger -t hinlink-modem "  内核日志：$(dmesg 2>/dev/null | grep -i rfkill | tail -3)"
+	fi
 	logger -t hinlink-modem "开机：记录 5G 模组状态"
 	status 2>&1 | logger -t hinlink-modem
 }

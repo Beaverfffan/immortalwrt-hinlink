@@ -14,7 +14,27 @@
 #
 # 已逐个核对过符号在 Linux 6.18.55 的 Kconfig 中存在；否则内核 oldconfig
 # 会丢弃并在编译日志里报 “not found”。
+#
+# ---- 另：5G 模组软复位依赖 rfkill-gpio 必须**内建** =y ----
+# 复位脚交给 rfkill-gpio（见 docs/HARDWARE.md §四），它必须在**内核启动期**
+# 就 probe 完，这样用户态任何脚本（/etc/init.d/hinlink-modem、/etc/rc.local）
+# 才都能看到 /sys/class/rfkill/rfkillN/。
+#
+# 时序依据（已对着 6.18 源码逐条核过）：
+#   · CONFIG_RFKILL_GPIO=y（内建）→ module_platform_driver 的 module_init
+#     展开成 __initcall() → device_initcall（级别 6）
+#     （include/linux/module.h: `#define module_init(x) __initcall(x);`）
+#   · 所有 initcall 都在 kernel_init_freeable() 里跑完，之后才
+#     run_init_process("/sbin/init")（init/main.c）
+#   ⇒ 用户态**一定**晚于 rfkill 设备的创建，不存在"加载太晚看不到"。
+#
+# ⚠️ 若将来变成 =m，就要等 kmods 服务加载，那时脚本可能看不到设备。
+#    所以这里**显式写死 =y**，不去依赖 rockchip armv8 config-6.18 里
+#    那一行（那是上游的，可能被改）。
 # ============ HinLink begin ============
+CONFIG_RFKILL=y
+CONFIG_RFKILL_GPIO=y
+
 CONFIG_FB=y
 CONFIG_FB_DEVICE=y
 CONFIG_FB_DEFERRED_IO=y
