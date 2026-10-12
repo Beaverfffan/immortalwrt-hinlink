@@ -86,7 +86,36 @@
 		pwms = <&pwm14 0 50000 0>;
 	};
 
-	/* it's modem reset pin */
+	/*
+	 * ============ 5G 模组复位（第二级，第一级是下面的 vcc3v3_modem）============
+	 *
+	 * 厂商 H89K 固件 dtb（fw89k/dtb/f3_24c8fc8_88036.dtb，model="HINLINK H89K"）
+	 * 原文：
+	 *     modem-enable {
+	 *         compatible = "regulator-fixed";
+	 *         enable-active-high;
+	 *         gpios = <&gpio4 RK_PC6 GPIO_ACTIVE_HIGH>;   // 高位 = 复位释放
+	 *         startup-delay-us = <0x1e8480>;              // 2 秒
+	 *         vin-supply = <&vcc_3v3_s3>;
+	 *     };
+	 *
+	 * ★★ 极性只由 `enable-active-high` 决定，不能凭 GPIO_ACTIVE_HIGH 猜 ★★
+	 *   6.18 的 drivers/gpio/gpiolib-of.c 注释原文：
+	 *     "The regulator GPIO handles are specified such that the presence
+	 *      or absence of enable-active-high solely controls the polarity of
+	 *      the GPIO line. Any phandle flags must be actively ignored."
+	 *   ⇒ 本节点有 enable-active-high = 高电平使能（与厂商一致，勿删）。
+	 *
+	 * ★ 与厂商的唯一差异：vin-supply 从 vcc_3v3_s3 改挂 vcc3v3_modem。
+	 *   厂商把「供电」与「复位」两路都挂在同一个 vcc_3v3_s3 上、平级无依赖，
+	 *   于是两路都在 regulator_late_init 里按注册顺序 enable —— 谁先谁后
+	 *   只取决于 DTS 节点书写顺序，**不保证「先上电、后释放复位」**。
+	 *   挂到 vcc3v3_modem 之后，regulator core 的 _regulator_enable() 会
+	 *   先递归 enable 上级电源（见 drivers/regulator/core.c），顺序由内核保证。
+	 *
+	 * ⚠️ 覆盖机型：H88K v2 / H88K v3 / H89K（三个都 include 本 dtsi，
+	 *   且都没有覆盖这两个节点）。改这里等于三个机型同时改。
+	 */
 	modem_enable: modem-enable {
 		compatible = "regulator-fixed";
 		enable-active-high;
@@ -96,7 +125,7 @@
 		regulator-min-microvolt = <3300000>;
 		regulator-max-microvolt = <3300000>;
 		regulator-name = "modem-enable";
-		vin-supply = <&vcc_3v3_s3>;
+		vin-supply = <&vcc3v3_modem>;   /* ★ 顺序保证：先供电、后释放复位 */
 		startup-delay-us = <2000000>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&modem_reset_en>;
@@ -192,6 +221,21 @@
 		vin-supply = <&vcc12v_dcin>;
 	};
 
+	/*
+	 * 5G 模组供电（第一级）—— 硬件的「模组电源」开关。
+	 * 第二级是上面的 modem_enable（复位释放），它靠 vin-supply 指到本节点，
+	 * 从而由内核保证「先上电、后释放复位」。
+	 *
+	 * 厂商 H89K dtb 原文（fw89k/dtb/f3_24c8fc8_88036.dtb）：
+	 *     vcc3v3-modem {
+	 *         compatible = "regulator-fixed";
+	 *         enable-active-high;
+	 *         gpios = <&gpio4 RK_PA3 GPIO_ACTIVE_HIGH>;
+	 *         pinctrl-0 = <&modem-power-en>;
+	 *         vin-supply = <&vcc_3v3_s3>;
+	 *     };
+	 * 本节点与厂商逐字段一致（含 enable-active-high = 高电平使能）。
+	 */
 	vcc3v3_modem: vcc3v3-modem {
 		compatible = "regulator-fixed";
 		enable-active-high;

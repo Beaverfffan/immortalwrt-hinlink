@@ -241,54 +241,182 @@ README 的机型表把它们记为「M.2」—— 意思是 WiFi 走 M.2 扩展�
 
 ---
 
-## 四、5G / 4G 模组供电与复位 IO
+## 四、5G / 4G 模组：启动上电 + 复位流程
 
-这是最容易配错的部分 —— 各机型的 IO 完全不同。
+本节是「iStoreOS 同款的启动 5G pin 复位流程」的完整实现说明。
+**2026-10-12 重写**：此前有三处理解错误，导致 **H69K 的模组其实从来没有
+被上电过**、**H29K 的供电脚从来没人驱动** —— 见 §4.4。
 
-### 逐机型明细
+### 4.1 机制：两级 `regulator-fixed`，用 `vin-supply` 串起时序
 
-| 机型 | 模组供电 | 模组复位/power-gpios | 启动延时 | RF kill |
+内核侧只有一种可靠做法（iStoreOS 与厂商固件本质也是这个）——
+把「供电」和「复位」各做成一个 `regulator-fixed`，再用 `vin-supply`
+把复位挂在供电**下面**：
+
+```
+        vcc5v0_sys / vcc_3v3_s3           板级常电
+                │
+                ▼
+        vcc3v3_modem     第一级 = 模组供电    startup-delay-us = 5 ms
+                │  (vin-supply)
+                ▼
+        modem_enable     第二级 = 复位释放    startup-delay-us = 2 s
+```
+
+★ **为什么必须用 `vin-supply` 串起来，而不是两个平级 regulator 都
+`always-on`**：regulator core 的 `_regulator_enable()` 会**先递归 enable
+上级电源**（`drivers/regulator/core.c`），所以顺序由内核保证 ——
+**先上电、再释放复位**。两个平级的 regulator 则按注册顺序（≈ DTS 节点
+书写顺序）enable，顺序不受控；一旦复位先释放，复位就等于没做。
+
+厂商 H89K 的 dtb 就是平级的（`vcc3v3-modem` 与 `modem-enable` 都挂
+`vcc_3v3_s3`），本仓库刻意改成串联。
+
+### 4.2 ★★ 极性铁律：只看 `enable-active-high`，DT 里的 phandle flag 被忽略 ★★
+
+**这是本节最重要的一条，也是 H69K bug 的根源，务必记住。**
+
+6.18 的 `drivers/gpio/gpiolib-of.c` 里有一张极性映射表，注释原文：
+
+```
+The regulator GPIO handles are specified such that the presence
+or absence of "enable-active-high" solely controls the polarity of
+the GPIO line. Any phandle flags must be actively ignored.
+```
+
+⇒ 对 `regulator-fixed` 的 `gpio` / `gpios` 属性：
+
+| 节点里有没有 `enable-active-high` | 实际极性 | 使能时物理电平 |
+|---|---|---|
+| **有** | 高电平使能 | 高（3.3 V） |
+| **无** | 低电平使能 | 低（0 V） |
+
+⚠️ **`gpios = <&gpio4 RK_PB4 GPIO_ACTIVE_LOW>` 里的 `GPIO_ACTIVE_LOW` 只是装饰**，
+内核不读它。绝对不要"照抄 flag"就以为极性对了 —— 必须确认有没有
+`enable-active-high`。
+
+（对照：`rfkill-gpio` 走常规 gpiod 路径，flag **有效**；`gpio-hog` 也有效。
+只有 `regulator-fixed` / `reg-fixed-voltage` / `regulator-gpio` 这三类
+compatible 有这个"忽略 flag"的特殊规则。）
+
+### 4.3 逐机型明细（全部以厂商 dtb 逐字段核对为准）
+
+| 机型 | 供电脚 | 复位脚 | 极性 | 依赖链 | 权威来源 |
+|---|---|---|---|---|---|
+| **H29K v1.3 / v5（1.14 / 1.49）** | GPIO4_B5 | GPIO4_B4 | **低有效**（都无 EAH） | ✔ 复位挂供电下 | 厂商 dtb<br>`f3_318a000_40194.dtb` |
+| **H69K / H69K-mini** | —（单路） | GPIO0_C0 | **低有效**（无 EAH） | vin = `vcc5v0_sys` | 厂商 dtb<br>`dtb_3245000.dtb` |
+| **H88K v2 / v3 / H89K** | GPIO4_A3 | GPIO4_C6 | **高有效**（都有 EAH） | ✔ 复位挂供电下 | 厂商 dtb<br>`f3_24c8fc8_88036.dtb` |
+
+（EAH = `enable-active-high`）
+
+三组的极性**互不相同**：H29K / H69K 是**低有效**，H88K / H89K 是**高有效**。
+任意两组抄错的结果都是**模组不上电**（H69K 就是这么错的）。
+
+H69K 只有一路 —— 厂商与 iStoreOS 都只给了一个 `modem_enable`
+（硬件上这**一个信号**同时担当「模组电源使能」和「复位释放」）。
+
+> ⚠️ 旧版本本节把 H89K 记成「A3 低有效 **5 V**、C6 低有效 3.3 V」——
+> **两个极性都写反了**（厂商 dtb 两路都是 `enable-active-high`），
+> 电压也写错（两路 `regulator-min-microvolt` 都是 3300000）。已修正。
+
+### 4.4 本次修正（2026-10-12）—— 三个真 bug
+
+| # | 机型 | 原状 | 为什么是错的 | 现在 |
 |---|---|---|---|---|
-| **H69K / H69K-mini** | `modem_enable`: GPIO0_C0 低有效，3.3V | — | **2 秒** | ❌ 未配 |
-| H69K（iStoreOS 参考） | 同上 GPIO0_C0 | — | 2 秒 | ❌ |
-| **H29K v1.3** | 模组有 `power-gpios` = **GPIO4_B5** | — | — | ✅ `rfkill-gpio` |
-| **H29K v5** | 模组**不独立控制供电** | — | — | ✅ `rfkill-gpio` |
-| H69K（上游 unifreq 参考） | `vcc5v0_sata` GPIO0_C5；`vcc3v8_lte_modem` GPIO0_A5（已注释） | `lte_modem_reset` GPIO0_C0 | — | ✅ `rfkill-gpio` modem |
-| **H89K** | `modem_power` GPIO4_A3 低有效 **5V** + `modem_reset` GPIO4_C6 低有效 3.3V | 双路（供电 + 复位分开） | — | ❌ 未配 |
-| H68K 系列 | 无（无5G 模组） | — | — | — |
+| 1 | **H69K / H69K-mini** | `modem_enable` 里写了 `enable-active-high` | 按 §4.2 变成**高电平使能**，而厂商是低有效 ⇒ 内核开机把 GPIO0_C0 拉**高**，模组从没被上电过 | 删掉该属性 = 低有效 |
+| 2 | **H29K v5（1.14 / 1.49）** | `&gpio4 { modem_reset_en { gpio-hog; output-high; } }` | ① 与 `rfkill-modem` 抢**同一个脚** GPIO4_B4；② 语义与厂商相反（占成常高）；③ 写法本身也错（`gpios = <4 RK_PB4 ...>` 里那个 `4` 被当 phandle，内核解析失败） | 整块删除 |
+| 3 | **H29K 全系** | 只有 `rfkill-gpio`（`reset-gpios` + `power-gpios`） | 6.18 主线的 `rfkill-gpio.c` **只 request `reset` / `shutdown`，没有 `power`** ⇒ `power-gpios` 被完全忽略，**供电脚 GPIO4_B5 从来没人驱动** | 改成两级 regulator（同 H88K 结构） |
 
-### ⚠️ 关键差异：H89K 与 H29K 的模组 IO 完全相反
+顺带：H88K / H89K 的 `modem_enable` 的 `vin-supply` 从 `vcc_3v3_s3` 改挂
+`vcc3v3_modem`，把「供电 → 复位」依赖链补上（厂商是平级的，靠运气）。
+
+#### 为什么 `rfkill-gpio` 那条路走不通（值得记住）
+
+```c
+/* net/rfkill/rfkill-gpio.c（6.18 主线） */
+rfkill->reset_gpio    = devm_gpiod_get_optional(dev, "reset",    GPIOD_ASIS);
+rfkill->shutdown_gpio = devm_gpiod_get_optional(dev, "shutdown", GPIOD_ASIS);
+/* ★ 没有 "power" —— power-gpios 属性是空转的 */
+
+ret = gpiod_direction_output(rfkill->reset_gpio, true);  /* probe 时直接拉到"工作态" */
+```
+
+两个问题：
+
+1. **`power-gpios` 无实现**（上面那段就是全部）；
+2. **时序错**：`rfkill-gpio` 是 platform driver，在 `device_initcall` 阶段
+   probe 时就把复位脚拉到工作态；而 `regulator-always-on` 的 enable 发生在
+   更晚的 `late_initcall_sync`（`regulator_late_init`）⇒ **复位动作早于供电**，
+   等于没复位。
+
+⇒ 在「保留 `/dev/rfkill` 软开关」和「可靠复位时序」之间二选一时，
+本仓库选**可靠时序**。要软开关就把 DTS 里的 regulator 段换回 rfkill 段
+（各 DTS 的注释里保留了原文），但必须接受上面两点。
+
+### 4.5 内核侧执行时序（可对照 dmesg / 万用表验证）
 
 ```
-H29K v1.3:  模组 power-gpios = GPIO4_B5（单路，深处模组自己管）
-H89K:       modem_power  = GPIO4_A3  5.0V  低有效   ← 供电
-            modem_reset  = GPIO4_C6  3.3V  低有效   ← 复位
+内核启动
+  ├─ device_initcall     各 platform driver probe（此时 5G 相关 GPIO 还没人动）
+  ├─ ...
+  └─ late_initcall_sync  regulator_late_init()
+         └─ 对每个 always-on / boot-on 的 regulator 调 _regulator_enable()
+              ├─ 先递归 enable 上一级（vin-supply）      ← vcc3v3_modem
+              │     gpiod_set_value(ena_gpiod, 1)，等 startup-delay-us(5ms)
+              └─ 再 enable 自己                          ← modem_enable
+                    gpiod_set_value(ena_gpiod, 1)，等 startup-delay-us(2s)
 ```
 
-H89K 是**两路独立 IO**（5V 供电 + 3.3V 复位），H29K 是**一路**。
-把H29K 的配置套到 H89K（或反之）都会导致**模组无法上电或无法复位**。
+以 H29K 为例（两级都低有效），最终电平：
 
-参数来源：H89K 来自厂商 2025 固件 dtb（`vendor-h89k.dtb`）逐项核对，
-H29K 来自厂商 DTS。
+```
+              复位保持        正常工作
+供电 GPIO4_B5   高   ──上电──►  低 ┐
+                                   │ 5 ms 电源稳定
+复位 GPIO4_B4   高   ──释放──►  低 ┘ 然后等 2 s 模组启动
+                                   ▲
+                        顺序由 vin-supply 保证：B5 先变低，之后 B4 才变低
+```
 
-### 5G 模组 UART
+**实机验证命令**（H29K 上电后）：
+
+```sh
+# 1. 看两级 regulator 是否都存在且已使能
+cat /sys/kernel/debug/regulator/regulator_summary | grep -i modem
+#    期望看到 vcc3v3_modem 与 modem_enable，enable_count > 0
+
+# 2. 看引脚当前电平（sysfs gpio 已内建 =y）
+for n in 140 141; do echo "gpio$n = $(cat /sys/class/gpio/gpio$n/value 2>/dev/null || echo 未导出)"; done
+#    RK3528 gpio4 base = 128 → B4=140, B5=141；工作态应为 0（低）
+
+# 3. 看模组是否枚举出来
+lsusb | grep -iE "quectel|fibocom|2cb7|2dee|0e8d"
+ls /dev/ttyUSB* /dev/cdc-wdm* 2>/dev/null
+
+# 4. 内核日志里 regulator / gpio 相关
+dmesg | grep -iE "regulator|modem|ena_gpio"
+```
+
+### 4.6 5G 模组 UART
 
 H29K v5 有 `&uart2`（5G 串口），v1.3 没有。这是 v1.3/v5 的重要区别之一，
 详见 README §4.6。
 
-### 启动延时的必要性
+### 4.7 启动延时为什么是 2 秒
 
-H69K 的 `modem_enable` regulator 带 `startup-delay-us = <2000000>`（**2 秒**）——
-5G 模组上电后需要时间稳定，过早发AT 命令会失败。这个延时来自 iStoreOS，
-本仓库已采用。
+三个机型的「复位释放」级都带 `startup-delay-us = <2000000>`（**2 秒**）——
+模组上电后需要时间稳定，过早发 AT 命令会失败。这个值来自 iStoreOS / 厂商
+dtb，**不要随意调小**。H29K 的「供电」级另有 5 ms 的小延时（等电源轨稳定，
+本身也是厂商没有、本仓库补的）。
 
-⚠️ 若换用其他模组或改延时，需实测调整。
+⚠️ 换用其他模组或调整延时后需实测。
 
-### rfkill 缺失
+### 4.8 rfkill 现状
 
-H69K 与 H89K 都**没有** `rfkill-gpio` 节点。H29K 有。
-厂商 dtb 里 H89K 也没有 rfkill —— 可能是设计上模组常电，无需 rfkill。
-若需要软关机功能，得自己加节点。
+改成两级 regulator 后，**四个机型族都没有 `rfkill-gpio` 节点**
+（`/dev/rfkill` 里不会有 `wwan`）。厂商 dtb 里 H69K / H89K 本来也没有；
+H29K 是本次为「时序可靠」主动去掉的。
+需要软关机时见 §4.4 末尾的取舍说明。
 
 ---
 

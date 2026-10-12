@@ -68,11 +68,77 @@
 		};
 	};
 
-	rfkill-modem {
-		compatible = "rfkill-gpio";
-		name = "rfkill-modem";
-		type = "wwan";
-		reset-gpios = <&gpio4 RK_PB4 GPIO_ACTIVE_LOW>;
+
+	/*
+	 * ============ 5G 模组：上电 + 复位（两级 regulator-fixed）============
+	 *
+	 * 硬件（厂商 H29K 固件 dtb f3_318a000_40194.dtb，
+	 * model="HINLINK H29K Board"，逐字段实证）：
+	 *
+	 *     rfkill-modem {
+	 *         compatible = "rfkill-gpio";
+	 *         type = "wwan";
+	 *         reset-gpios = <&gpio4 RK_PB4 GPIO_ACTIVE_LOW>;   ← 复位
+	 *         power-gpios = <&gpio4 RK_PB5 GPIO_ACTIVE_LOW>;   ← 供电
+	 *     };
+	 *
+	 * ★ 为什么不能照抄这个 rfkill-gpio 段：
+	 *   1) 6.18 主线的 net/rfkill/rfkill-gpio.c 只 request 两个脚：
+	 *          devm_gpiod_get_optional(dev, "reset",    GPIOD_ASIS)
+	 *          devm_gpiod_get_optional(dev, "shutdown", GPIOD_ASIS)
+	 *      **没有 "power"**。`power-gpios` 会被完全忽略 ——
+	 *      模组供电脚 GPIO4_B5 在内核里从来没人驱动过。
+	 *   2) 顺序不可控：rfkill-gpio 是 platform driver，device_initcall
+	 *      阶段 probe 时就把 reset 脚定向并拉到工作态；而
+	 *      regulator-always-on 的 enable 发生在更晚的 late_initcall_sync
+	 *      ⇒「复位先于上电」，复位等于没做。
+	 *
+	 * ⇒ 统一改成两级 regulator-fixed，与 H69K / H88K / H89K 完全同款：
+	 *     ① vcc3v3_modem 先 enable（GPIO4_B5，低电平使能）
+	 *     ② modem_enable 靠 vin-supply 依赖它，供电稳定后才 enable
+	 *        （GPIO4_B4，低电平使能 = 复位释放）
+	 *
+	 * ★★ 极性只由 `enable-active-high` 决定，不能凭 GPIO_ACTIVE_LOW 猜 ★★
+	 *   6.18 的 drivers/gpio/gpiolib-of.c 注释原文：
+	 *     "The regulator GPIO handles are specified such that the presence
+	 *      or absence of enable-active-high solely controls the polarity of
+	 *      the GPIO line. Any phandle flags must be actively ignored."
+	 *   ⇒ 下面两个节点**都不写** enable-active-high = 低电平使能。
+	 *
+	 * ⚠️ 本文件旧版（2026-10-12 之前）有两个错误，均已删除：
+	 *   ① `&gpio4 { modem_reset_en { gpio-hog; gpios = <4 RK_PB4 ...>;
+	 *      output-high; }; }` —— 把 GPIO4_B4 占成常高电平，与 rfkill 的
+	 *      reset 脚是**同一个脚**（虽然 phandle 写成数字 4 导致内核解析
+	 *      失败、实际没占用，但写法本身就是错的），且语义与厂商相反；
+	 *   ② pinctrl 里的 `modem_reset: <4 RK_PC1>` —— 定义了但从未被引用，
+	 *      是死代码（PC1 也不是模组复位脚）。
+	 */
+	vcc3v3_modem: vcc3v3-modem {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc3v3_modem";
+		gpio = <&gpio4 RK_PB5 GPIO_ACTIVE_LOW>;   /* 仅语义标注，内核忽略 flag */
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		startup-delay-us = <5000>;                /* 电源稳定 5ms */
+		vin-supply = <&vcc5v0_sys>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&modem_power_en>;
+	};
+
+	modem_enable: modem-enable {
+		compatible = "regulator-fixed";
+		regulator-name = "modem_enable";
+		gpio = <&gpio4 RK_PB4 GPIO_ACTIVE_LOW>;   /* 仅语义标注，内核忽略 flag */
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		startup-delay-us = <2000000>;             /* 模组启动 2s，与 H69K 一致 */
+		vin-supply = <&vcc3v3_modem>;             /* ★ 顺序保证：先供电、后复位 */
+		pinctrl-names = "default";
+		pinctrl-0 = <&modem_reset_en>;
 	};
 
 	ir-receiver {
@@ -326,9 +392,14 @@
 		};
 	};
 
+	/* 5G 模组：供电 + 复位（GPIO4_B5 / GPIO4_B4，厂商 dtb 实证） */
 	modem {
-		modem_reset: modem_reset {
-			rockchip,pins = <4 RK_PC1 RK_FUNC_GPIO &pcfg_pull_none>;
+		modem_power_en: modem-power-en {
+			rockchip,pins = <4 RK_PB5 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+
+		modem_reset_en: modem-reset-en {
+			rockchip,pins = <4 RK_PB4 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 	};
 
@@ -481,15 +552,6 @@
  * };
  */
 
-
-&gpio4 {
-    modem_reset_en {
-        gpio-hog;
-        gpios = <4 RK_PB4 GPIO_ACTIVE_HIGH>;
-        output-high;
-        line-name = "Modem_Reset_EN";
-    };
-};
 
 &saradc {
     compatible = "rockchip,rk3528-saradc";

@@ -333,7 +333,7 @@ RK3528 的 WiFi 走 sdio0，所以这是厂商自己声明「本机无 WiFi」�
 | eMMC / TF / uart2 | 引脚与供电相同（仅速率档位不同，见下表）|
 | gmac0 + mdio0 | RTL8211F，reset 同为 **GPIO4_B3** |
 | PCIe | `pcie2x1l1`(RTL8125, reset GPIO4_A2)、`pcie3x4`(NVMe, reset GPIO4_B6) 相同 |
-| 模组 IO | `vcc3v3_modem`(**GPIO4_A3 高有效**) + `modem_enable`(**GPIO4_C6 高有效**, 2 s 延时) 相同 |
+| 模组 IO | `vcc3v3_modem`(**GPIO4_A3 高有效**) + `modem_enable`(**GPIO4_C6 高有效**, 2 s 延时) 相同；**2026-10-12 起 `modem_enable` 的 `vin-supply` 改挂 `vcc3v3_modem`**，由内核保证「先上电、后释放复位」 |
 | LED | 4 个 GPIO **完全相同**（GPIO2_C3 / GPIO2_C5 / GPIO3_B7 / GPIO0_A0），只是标签用途不同 |
 | 风扇 | 都是 **pwm14** + 50000 ns 周期 |
 
@@ -517,7 +517,7 @@ gmac0_rx_bus2   GPIO2_C1 GPIO2_C2 GPIO4_C2
 | SATA | ★ **三路均 disabled** —— 厂商 dtb 里 `sata0/1/2` 与 combphy 全未使能，本机不接 SATA 座 |
 | 屏 | ST7789V 135×240 rot90 @ `spi@fecb0000`，`dc-gpios` = GPIO1_A4，SPI 1 MHz，屏供电 `vcc3v0_lcd`(3.0V) |
 | 风扇 | `pwm3`（febf0020） |
-| 4G/5G 模组 | 供电 GPIO4_A3（5V）、复位 GPIO4_C6（3.3V） |
+| 4G/5G 模组 | 供电 GPIO4_A3、复位 GPIO4_C6；**两路都是 3.3 V 高有效**（`enable-active-high`）。<br>⚠️ 旧文写「A3 5 V / C6 3.3 V，均低有效」是**错的**，见 `docs/HARDWARE.md` §4.2 / §4.3 |
 | 红外 | dtb 有 `ir-int-pin`（GPIO0_D4）引脚定义，但无 `gpio-ir-receiver` 节点 |
 
 **未配置项**（厂商 dtb 中同样未启用，未擅自添加）：SATA、RTC、红外接收。
@@ -902,6 +902,45 @@ HinLink 兼容串清单也要补 4 个新的（否则 MAC 生成规则失效）�
 
 ---
 
+### 4.15 ★ 2026-10-12 5G 模组启动上电/复位流程重做（修掉三个真 bug）
+
+用户要求「为 h29k / 69k / 88k / 89k 设计 **iStoreOS 同款的启动 5G pin 复位
+流程**」。逐字段对照厂商 dtb 后，发现此前实现有**三个会让模组完全不工作**的错误：
+
+| # | 机型 | 原状 | 后果 |
+|---|---|---|---|
+| 1 | H69K / H69K-mini | `modem_enable` 多写了 `enable-active-high` | 极性反转，内核开机把 GPIO0_C0 拉**高** ⇒ **模组从没被上电过** |
+| 2 | H29K v5（1.14 / 1.49） | `&gpio4 { modem_reset_en { gpio-hog; output-high; } }` | 与 `rfkill-modem` 抢同一个脚 GPIO4_B4；语义与厂商相反；写法本身也错（`gpios = <4 RK_PB4 ...>` 的 `4` 被当 phandle） |
+| 3 | H29K 全系 | 只有 `rfkill-gpio`（`reset-gpios` + `power-gpios`） | 6.18 主线的 `rfkill-gpio.c` **只 request `reset`/`shutdown`，没有 `power`** ⇒ 供电脚 GPIO4_B5 **从来没人驱动** |
+
+**核心知识点（值得单独记住）**：
+
+`regulator-fixed` / `reg-fixed-voltage` / `regulator-gpio` 这三类 compatible 的
+`gpio` / `gpios` 属性，**DT 里写的 phandle flag（`GPIO_ACTIVE_LOW` 等）被内核
+主动忽略**，极性只由有没有 `enable-active-high` 决定 ——
+见 6.18 `drivers/gpio/gpiolib-of.c` 的极性映射表及其注释。H69K 就是"照抄了
+`GPIO_ACTIVE_LOW`"却又带着 `enable-active-high`，于是极性反转。
+
+**改动**：
+
+| 文件 | 改什么 |
+|---|---|
+| `rk3568-hinlink-h69k-{3eth,mini}.dts` | 删掉 `modem_enable` 的 `enable-active-high`（恢复低有效） |
+| `rk3528-hinlink-h29k-{v1.3-1.14,v5-1.14,v5-1.49}.dts` | `rfkill-gpio` → 两级 `regulator-fixed`（供电 GPIO4_B5 + 复位 GPIO4_B4，均低有效，靠 `vin-supply` 串时序）；删掉 v5 的 `gpio-hog` 与从未被引用的 `modem_reset: <4 RK_PC1>` 死 pinctrl |
+| `rk3588-hinlink.dtsi`（H88K v2/v3 + H89K 共用） | `modem_enable` 的 `vin-supply` 从 `vcc_3v3_s3` 改挂 `vcc3v3_modem`，补上「供电 → 复位」依赖链 |
+
+**验证**：8 份相关 DTB 用内核 `cpp + dtc` 重新编译通过，并反编译逐字段核对 ——
+节点存在性 / `enable-active-high` 有无 / gpio 的 bank-pin-flag / `vin-supply`
+phandle 确实指向供电级 / 无 `rfkill-gpio` 残留 / 无 `gpio-hog` 残留。
+
+**完整机理、逐机型表、内核执行时序图与实机验证命令**见
+[`docs/HARDWARE.md` §四](docs/HARDWARE.md)（该节已按本次结论整体重写）。
+
+**代价**：四个机型族都不再有 `rfkill-gpio`（`/dev/rfkill` 里没有 `wwan`）。
+取舍理由与恢复方法见 `docs/HARDWARE.md` §4.4 末尾。
+
+---
+
 ## 五、仓库结构
 
 ```
@@ -1233,6 +1272,8 @@ fdtfile=rockchip/rk3568-hinlink-h68k.dtb
 | 厂商 DTB ↔ 上游 DTS 交叉验证 | ✅ H89K 屏 7 项吻合；H28K / H66K / H68K 网络构成吻合 |
 | dtc 完整编译（走 OpenWrt 真实链路） | ✅ **20/20 PASS**，产出 20 个 `image-*.dtb`（见下） |
 | phandle 交叉引用 | ✅ 由 `tools/check_phandle.py` 覆盖（RK3568 + RK3588 全部通过） |
+| **5G 模组启动上电/复位流程** | ✅ **2026-10-12 重做**：h29k / 69k / 88k / 89k 四个机型族统一为「两级 `regulator-fixed` + `vin-supply` 依赖链」；极性经厂商 dtb 逐字段核对；8 份 DTB 反编译验证（节点 / `enable-active-high` / gpio pin+flag / 依赖链 phandle / 无 rfkill 与 hog 残留）。修掉三个真 bug（见 §4.15） |
+| 5G 流程实机验证 | ❌ 未上机（无模组/无实机）；期望现象与验证命令见 `docs/HARDWARE.md` §4.5 |
 | u-boot 全机型覆盖 | ✅ **8 个变体全部编译通过**（RK3528×3 + RK3568×2 + RK3588×3），全部机型无遗漏（见 §七） |
 | u-boot 实机启动 | ❌ 仅 h28k/h66k/h68k 为上游验证；自建 5 个变体未上机 |
 | 整包编译出固件 | ✅ `BUILD_EXIT_0`，`sysupgrade.img.gz` ×2（h68k-c-usb3，含 LuCI + mt7921e） |
@@ -1457,7 +1498,11 @@ lede 那份还是**混合体**：有红外接收（v5 特征）但无电池 ADC�
    而厂商 dtb 只有 3 颗 GPIO LED（第 4 颗疑为常亮硬件）。刷机后确认
    `led-yellow`(GPIO4_C1) 与 `led-blue`(GPIO4_C0) 分别跟哪个网口。
 7. **1.49 寸屏用哪份 fbtft 偏移 patch** —— 厂商只给了 1.9 与 1.14 两份，1.49 未提供。
-8. **H29K v5 的 5G 模组电源** —— 抄 iStoreOS 的 GPIO0_PC0 + 2s 启动延时。
+8. ~~**H29K v5 的 5G 模组电源** —— 抄 iStoreOS 的 GPIO0_PC0 + 2s 启动延时。~~
+   **2026-10-12 已闭环**：GPIO0_C0 是 **H69K** 的引脚，不是 H29K。H29K 由
+   厂商 dtb `f3_318a000_40194.dtb` 实证为**供电 GPIO4_B5 + 复位 GPIO4_B4
+   （均低有效）**，现已写成两级 regulator 并加 2 s 延时，见
+   `docs/HARDWARE.md` §4.3。仍需实机确认模组能否正常枚举。
 
 取证命令：
 
