@@ -57,17 +57,23 @@ case $board in
 
 	# ======================= RK3568（rk3568-hinlink-opc.dtsi）=======================
 
-	# ---- H68K A/B（2022 双千兆，2 口）：WAN = eth0 ----
+	# ---- H68K a-b（2022 双千兆，2 口）：WAN = eth0 ----
+	# 2026-10-12 改名：h68k-a / h68k-a-usb → h68k-a-b / h68k-a-b-usb
+	hinlink,opc-h68k-a-b|\
+	hinlink,opc-h68k-a-b-usb|\
 	hinlink,opc-h68k-a|\
 	hinlink,opc-h68k-a-usb|\
 	linkstar,opc-h68k-a)
 		ucidef_set_led_netdev "wan" "WAN" "blue:wan" "eth0"
 		;;
 
-	# ---- H68K 四网口老机器（c / c-usb / c-usb3 / d / d-usb）：WAN = eth0 ----
+	# ---- H68K c-d-f（2022~2023.4 四网口）：WAN = eth0 ----
 	# ★ 2026-10-12 按实机更正：原来写 eth1（照抄 2022 厂商固件），实机是 eth0。
+	#   同日把 c / d 与 c-usb3 / d-usb 合并为 c-d-f / c-d-f-usb。
 	# 同时收上游/厂商的统称 hinlink,h68k / linkstar,h68k（通用镜像兜底；
 	# board_name 取的是 compatible 的**第一个**串，本仓库机型走不到这组）。
+	hinlink,opc-h68k-c-d-f|\
+	hinlink,opc-h68k-c-d-f-usb|\
 	hinlink,opc-h68k-c|\
 	hinlink,opc-h68k-c-usb|\
 	hinlink,opc-h68k-c-usb3|\

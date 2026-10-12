@@ -45,16 +45,24 @@ rockchip_setup_interfaces() {
 
 	# ======================= RK3568 =======================
 
-	# ---- H68K A/B（2022 双千兆，仅 2 口）----
+	# ---- H68K a-b（2022 双千兆，仅 2 口）：WAN = eth0 ----
+	# 2026-10-12 改名：h68k-a / h68k-a-usb → h68k-a-b / h68k-a-b-usb
+	# （旧 compatible 保留在下面，旧 DTB / 厂商写的 board.d 仍能匹配）
+	hinlink,opc-h68k-a-b|\
+	hinlink,opc-h68k-a-b-usb|\
 	hinlink,opc-h68k-a|\
 	hinlink,opc-h68k-a-usb|\
 	linkstar,opc-h68k-a)
 		ucidef_set_interfaces_lan_wan 'eth1' 'eth0'
 		;;
 
-	# ---- H68K C/D/F（2022 四网口，2×RTL8125）+ D（2023.4）：WAN = eth0 ----
+	# ---- H68K c-d-f（2022~2023.4 四网口，2×RTL8125）：WAN = eth0 ----
 	# 旧版这里写的是 WAN=eth1（照抄 2022 厂商固件），实机反馈 c 是 WAN=eth0，
 	# 2026-10-12 更正。四网口机型统一 LAN=eth1 eth2 eth3 / WAN=eth0。
+	# 同日把 c / d 与 c-usb3 / d-usb 合并为 c-d-f / c-d-f-usb 两个机型，
+	# 旧 compatible 全部保留在下面。
+	hinlink,opc-h68k-c-d-f|\
+	hinlink,opc-h68k-c-d-f-usb|\
 	hinlink,opc-h68k-c|\
 	hinlink,opc-h68k-c-usb|\
 	hinlink,opc-h68k-c-usb3|\
@@ -170,6 +178,10 @@ rockchip_setup_macs() {
 	# ---- 全部 HinLink 机型：从 eMMC 的 CID 生成稳定 MAC ----
 	#   mmcblk0 必须是 **eMMC**（见各 DTS 的 mmc0 alias），
 	#   否则会拿 TF 卡的 CID，换卡就换 MAC。
+	hinlink,opc-h68k-a-b|\
+	hinlink,opc-h68k-a-b-usb|\
+	hinlink,opc-h68k-c-d-f|\
+	hinlink,opc-h68k-c-d-f-usb|\
 	hinlink,opc-h68k-a|\
 	hinlink,opc-h68k-a-usb|\
 	hinlink,opc-h68k-c|\

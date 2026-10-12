@@ -1,18 +1,25 @@
 // SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 /*
- * HinLink OPC-H68K D
+ * HinLink OPC-H68K c-d-f
  *
- * HinLink 适配for immortalwrt —— 每机型独立 DTS，不做自适应。
+ * HinLink 适配 for immortalwrt —— 每机型独立 DTS，不做自适应。
  *
- * 硬件事实来源：厂商 2023 R23.4.20 固件 dtb（已解包反编译逐项核对）
+ * ★ 本文件承载 c / d / f 三个板本（2026-10-12 合并）：
+ *     原 rk3568-hinlink-h68k-c.dts 与 rk3568-hinlink-h68k-d.dts
+ *     去注释/归一 model+compatible 后 **0 行实质差异**；
+ *     且 02_network 映射在当日更正后已一致（LAN eth1 eth2 eth3 / WAN eth0）。
+ *   compatible 里保留旧标识（hinlink,opc-h68k-c / -d）作为次串，
+ *   便于旧 DTB / 厂商写的 board.d 继续匹配。
+ *
+ * 硬件事实来源：厂商 2022 R22.7.19/R22.8.22 与 2023 R23.4.20 固件 dtb
  * 蓝本：OpenWrt 主线 rk3568-hinlink-h68k.dts
  *
- * 2023.4 推荐版：2×RTL8125 2.5G
- *   网口：LAN = eth1 eth2 eth3 / **WAN = eth0**（与 c 系一致）
- *   ⚠️ 旧注释写「WAN 从 eth1 改为 eth0」，2026-10-12 实机更正：c 系也是 eth0，
- *      全系只有 h68k-new 是 WAN = eth1。
+ * 2×RTL8125 2.5G + 2×千兆，无板载 WiFi
+ *   网口：LAN = eth1 eth2 eth3 / **WAN = eth0**（老一代把 WAN 焊在 gmac0 上）
+ *   （2026-10-12 按实机更正：旧版照抄 2022 厂商固件写成 WAN=eth1，实机是 eth0）
  *
- * ★ SATA 变体：combphy0 让给 SATA，USB3.0 不可用（见文件末尾说明）
+ * ★ SATA 变体（文件名不带 -usb）：combphy0 让给 SATA，USB3.0 不可用
+ *   需要 USB3.0 的机器请用 rk3568-hinlink-h68k-c-d-f-usb.dts
  */
 
 /dts-v1/;
@@ -20,8 +27,8 @@
 #include "rk3568-hinlink-opc.dtsi"
 
 / {
-	model = "HINLINK OPC-H68K d (2023.4, SATA)";
-	compatible = "hinlink,opc-h68k-d", "hinlink,h68k", "linkstar,h68k", "rockchip,rk3568";
+	model = "HINLINK OPC-H68K c-d-f (2022~2023.4, SATA)";
+	compatible = "hinlink,opc-h68k-c-d-f", "hinlink,opc-h68k-c", "hinlink,opc-h68k-d", "hinlink,h68k", "linkstar,h68k", "rockchip,rk3568";
 
 	aliases {
 		ethernet0 = &gmac0;
@@ -109,12 +116,12 @@
  *   combphy 同一时刻只能是一种 PHY_TYPE ⇒ SATA 与 USB3.0 **二选一**。
  *
  * 本变体使能 sata0（继承主线 opc.dtsi 的 status="okay"）。
- * 需要 USB3.0 的机器请用同名基础版本（无 -sata 后缀）。
+ * 需要 USB3.0 的机器请用 rk3568-hinlink-h68k-c-d-f-usb.dts。
  *
  * ★ 网口不受影响：2.5G 网卡走独立的 pcie30phy（phy@fe8c0000），
  *   与 combphy0 无关，因此启用 SATA 不改变网口数量。
  *
- * ★ 该复用只存在于 2022-2023 老机器（68k 的 a-b / c / c-usb3 / d）。
+ * ★ 该复用只存在于 2022-2023 老机器（h68k-a-b / c-d-f 两组的两个变体）。
  *   新机 h68k-new 与 h69k 系不涉及此复用。
  * ============================================================ */
 

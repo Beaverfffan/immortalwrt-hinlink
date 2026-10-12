@@ -32,16 +32,13 @@ DTSI = os.path.join(DTS, 'rk3568-hinlink-opc.dtsi')
 EXPECT = {
     # ---- RK3568 ----
     'rk3568-hinlink-h66k':        2,  # 无板载 GMAC，2xRTL8125（PCIe 枚举）
-    'rk3568-hinlink-h68k-a':      2,  # 2022 双千兆，2xGMAC，无 PCIe
-    'rk3568-hinlink-h68k-a-usb':  2,
-    'rk3568-hinlink-h68k-c':      4,  # 2xGMAC + 2xRTL8125
-    # ★ h68k-c-usb 与 h68k-c-usb3 硬件配置完全相同，已合并为一份 DTS，
-    #   用两个 compatible 区分（2022 C/D/F 的 USB3.0 变体 / 2022.8 的 c-usb3 改型）。
-    'rk3568-hinlink-h68k-c-usb3': 4,
-    'rk3568-hinlink-h68k-d':      4,
-    'rk3568-hinlink-h68k-d-usb':  4,
+    # ★ 2026-10-12 改名+合并：机型名 = 世代板本串
+    'rk3568-hinlink-h68k-a-b':     2,  # 2022 双千兆，2xGMAC，无 PCIe（SATA）
+    'rk3568-hinlink-h68k-a-b-usb': 2,  # 同上，USB3.0
+    'rk3568-hinlink-h68k-c-d-f':   4,  # 2xGMAC + 2xRTL8125（SATA）
+    'rk3568-hinlink-h68k-c-d-f-usb': 4,  # 同上，USB3.0
     'rk3568-hinlink-h68k-new':    4,
-    'rk3568-hinlink-h69k-3eth':   3,  # 屏蔽 gmac1 -> 1xGMAC + 2xRTL8125
+    'rk3568-hinlink-h69k-3eth':   3,  # 屏蔽 gmac0 -> 1xGMAC(gmac1) + 2xRTL8125
     'rk3568-hinlink-h69k-mini':   4,  # = H68K max，2xGMAC + 2xRTL8125
     # ---- RK3528 ----
     # H28K 是**双网口**：eth0 = 板载 RTL8211F RGMII(gmac1)，

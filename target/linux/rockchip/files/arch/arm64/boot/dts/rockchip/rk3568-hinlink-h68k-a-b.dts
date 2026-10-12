@@ -1,13 +1,30 @@
 // SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 /*
- * HinLink OPC-H68K A/B
+ * HinLink OPC-H68K a-b
  *
- * HinLink 适配for immortalwrt —— 每机型独立 DTS，不做自适应。
+ * HinLink 适配 for immortalwrt —— 每机型独立 DTS，不做自适应。
  *
  * 硬件事实来源：厂商 2022 R22.7.19/R22.8.22 固件 dtb（已解包反编译逐项核对）
  * 蓝本：OpenWrt 主线 rk3568-hinlink-h68k.dts
  *
+ * ★ 命名规则（2026-10-12 起）：机型名 = 「世代板本串」
+ *     h68k-a-b        A/B 板（2022 双千兆 2 口）+ SATA
+ *     h68k-a-b-usb    同上，USB3.0 版
+ *     h68k-c-d-f      C/D/F 板（2022~2023.4 四网口）+ SATA
+ *     h68k-c-d-f-usb  同上，USB3.0 版
+ *   合并前的 a / a-usb / c / c-usb3 / d / d-usb 六个机型里，
+ *   c 与 d（以及 c-usb3 与 d-usb）的 DTS 归一化后 0 行差异，已合并；
+ *   a 与 a-usb 只差 &sata0 一行 —— SATA 与 USB3.0 在 RK3568 上
+ *   争同一颗 combphy0，硬件二选一，**不能合并**。
+ *
+ *   compatible 里保留旧标识（hinlink,opc-h68k-a）作为次串，
+ *   便于旧 DTB / 厂商写的 board.d 继续匹配。
+ *
  * 2022 老机器：2 个千兆口，无 2.5G，板载 SDIO WiFi（AP6256/Broadcom）+ RTC
+ *   网口：LAN = eth1 / **WAN = eth0**（老一代把 WAN 焊在 gmac0 上）
+ *
+ * ★ SATA 变体（文件名不带 -usb）：combphy0 让给 SATA，USB3.0 不可用
+ *   需要 USB3.0 的机器请用 rk3568-hinlink-h68k-a-b-usb.dts
  */
 
 /dts-v1/;
@@ -15,8 +32,8 @@
 #include "rk3568-hinlink-opc.dtsi"
 
 / {
-	model = "HINLINK OPC-H68K a-b (2022, USB3.0)";
-	compatible = "hinlink,opc-h68k-a-usb", "hinlink,h68k", "linkstar,h68k", "rockchip,rk3568";
+	model = "HINLINK OPC-H68K a-b (2022, SATA)";
+	compatible = "hinlink,opc-h68k-a-b", "hinlink,opc-h68k-a", "hinlink,h68k", "linkstar,h68k", "rockchip,rk3568";
 
 	aliases {
 		ethernet0 = &gmac0;
@@ -231,20 +248,23 @@
 };
 
 /* ============================================================
- * USB3.0 变体（默认）：combphy0 让给 USB3.0
+ * SATA 变体：combphy0 让给 SATA，USB3.0 不可用
  *
  * ★ RK3568 硬件复用关系（rk3568.dtsi 实证）：
  *     sata0    phys = <&combphy0 PHY_TYPE_SATA>   (phy@fe820000)
  *     USB3.0   也需要 combphy0 作 PHY_TYPE_USB3
  *   combphy 同一时刻只能是一种 PHY_TYPE ⇒ SATA 与 USB3.0 **二选一**。
  *
- * 本变体禁用 sata0，combphy0 供 USB3.0 使用。
- * 需要 SATA 的机器请用同名 -sata.dts 变体。
+ * 本变体使能 sata0（继承主线 opc.dtsi 的 status="okay"）。
+ * 需要 USB3.0 的机器请用 rk3568-hinlink-h68k-a-b-usb.dts。
  *
- * ★ 该复用只存在于 2022-2023 老机器（68k 的 a-b / c / c-usb3 / d）。
- *   新机 h68k-new 与 h69k 系不涉及此复用，两者可同时使用。
+ * ★ 网口不受影响：2.5G 网卡走独立的 pcie30phy（phy@fe8c0000），
+ *   与 combphy0 无关，因此启用 SATA 不改变网口数量。
+ *
+ * ★ 该复用只存在于 2022-2023 老机器（h68k-a-b / c-d-f 两组的两个变体）。
+ *   新机 h68k-new 与 h69k 系不涉及此复用。
  * ============================================================ */
 
 &sata0 {
-	status = "disabled";
+	status = "okay";
 };

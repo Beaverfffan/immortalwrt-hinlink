@@ -1,6 +1,24 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
+⚠️⚠️ **已过时（2026-10-12 起）—— 不要再运行本脚本** ⚠️⚠️
+
+本脚本是最初**一次性**生成全机型 DTS / board.d 的生成器。之后所有修正都是
+**直接改仓库里的文件**做的，两边早已不同步。现在直跑它会用旧内容
+**覆盖掉手工修正**（WAN 映射、屏/风扇参数、H89K 重构、h68k 合并改名等全丢）。
+
+如需参考历史生成逻辑请只读不改；要改机型请直接改
+`target/linux/rockchip/files/.../` 下的 DTS 与
+`armv8/base-files/etc/board.d/{01_leds,02_network}`。
+
+已知与现状不符的地方（举例，不止这些）：
+  * 机型名仍是 `h68k-a / -a-usb / -c / -c-usb3 / -d / -d-usb`
+    （现状是 `h68k-a-b / -a-b-usb / -c-d-f / -c-d-f-usb`，见 README §4.14）
+  * 02_network 里 h68k 老机器的 WAN 仍写 eth1（2026-10-12 已更正为 eth0）
+  * 没有 H29K 1.49 寸触屏版、没有 fbtft 内建段
+
+---
+
 生成 immortalwrt/immortalwrt 的 HinLink 全机型适配（拆分版，每机型独立 DTS）。
 
 设计原则（用户要求：拆分所有机型，不允许自适应）：

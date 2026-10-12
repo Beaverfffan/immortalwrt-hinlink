@@ -170,15 +170,34 @@ define Device/hinlink_opc-h66k
 endef
 TARGET_DEVICES += hinlink_opc-h66k
 
-# ---- H68K 老机器：a-b（2022 双千兆，2 口）----
+# ---- H68K 老机器：a-b（2022 双千兆，2 口） / c-d-f（2022~2023.4 四网口）----
+#
+# ★ 2026-10-12 改名 + 合并（用户要求）：
+#     机型名 = 「世代板本串」，一眼能看出哪些板本是同一台机器。
+#
+#       hinlink_opc-h68k-a-b         A/B 板（2022 双千兆 2 口）+ SATA
+#       hinlink_opc-h68k-a-b-usb     同上，USB3.0
+#       hinlink_opc-h68k-c-d-f       C/D/F 板（2022~2023.4 四网口）+ SATA
+#       hinlink_opc-h68k-c-d-f-usb   同上，USB3.0
+#
+#   合并前是 a / a-usb / c / c-usb3 / d / d-usb 六个：
+#     · c 与 d（以及 c-usb3 与 d-usb）的 DTS 归一化后 **0 行实质差异**，
+#       且 02_network 映射在当日 WAN 更正后已一致 ⇒ 合并。
+#     · a 与 a-usb 只差 `&sata0 { status }` 一行 —— RK3568 上 sata0 与 USB3.0
+#       争同一颗 combphy0，**硬件二选一，不能合并**，保留两个变体。
+#
+#   ★ 命名约定：无后缀 = SATA，-usb = USB3.0（沿用各源码惯例）
+#   ★ 网口（两组一致）：c-d-f 四口 LAN eth1 eth2 eth3 / WAN eth0
+#                       a-b 两口 LAN eth1 / WAN eth0
+#       判据是「WAN 焊在哪颗 GMAC 上」——老一代在 gmac0 ⇒ eth0。
+#   ★ compatible 里保留了旧标识（hinlink,opc-h68k-a / -c / -d / -c-usb3 …）
+#     作为次串，旧 DTB / 厂商写的 board.d 仍能匹配。
 
-# ---- H68K 老机器：a-b（2022 双千兆，2 口）----
-# ★ 命名遵循各源码约定：无后缀 = SATA，-usb = USB3.0
-
-define Device/hinlink_opc-h68k-a
+# ---- H68K a-b（2022 双千兆，2 口）：板载 AP6256 SDIO WiFi + RTC ----
+define Device/hinlink_opc-h68k-a-b
   $(Device/hinlink_h6xk_sdio_ap6256)
   DEVICE_MODEL := OPC-H68K a-b (2022, SATA)
-  DEVICE_DTS := rk3568-hinlink-h68k-a
+  DEVICE_DTS := rk3568-hinlink-h68k-a-b
   # ★ u-boot：直接用**上游 OpenWrt 的 HINLINK 支持**（见 patches-uboot/）
   #   上游 package/boot/uboot-rockchip/Makefile 已有本条目，defconfig 与
   #   u-boot dts 由 patches-uboot/ 里那两个 patch 提供（源自 openwrt/main
@@ -187,17 +206,18 @@ define Device/hinlink_opc-h68k-a
   #   TPL/ATF 走通用 rk3568_ddr_1560MHz + bl31，不依赖具体板子。
   #   BUILD_DEVICES 已在我们的 Makefile 补丁里登记本机型，
   #   ⇒ make defconfig 会自动带上 CONFIG_PACKAGE_u-boot-hinlink-h68k-rk3568=y。
+
   UBOOT_DEVICE_NAME := hinlink-h68k-rk3568
   DEVICE_PACKAGES += kmod-ata-ahci-dwc
   # ★ 通用包集（LuCI + 全无线网卡驱动 + 风扇驱动）
   $(Device/hinlink_common)
 endef
-TARGET_DEVICES += hinlink_opc-h68k-a
+TARGET_DEVICES += hinlink_opc-h68k-a-b
 
-define Device/hinlink_opc-h68k-a-usb
+define Device/hinlink_opc-h68k-a-b-usb
   $(Device/hinlink_h6xk_sdio_ap6256)
   DEVICE_MODEL := OPC-H68K a-b (2022, USB3.0)
-  DEVICE_DTS := rk3568-hinlink-h68k-a-usb
+  DEVICE_DTS := rk3568-hinlink-h68k-a-b-usb
   # ★ u-boot：直接用**上游 OpenWrt 的 HINLINK 支持**（见 patches-uboot/）
   #   上游 package/boot/uboot-rockchip/Makefile 已有本条目，defconfig 与
   #   u-boot dts 由 patches-uboot/ 里那两个 patch 提供（源自 openwrt/main
@@ -206,18 +226,18 @@ define Device/hinlink_opc-h68k-a-usb
   #   TPL/ATF 走通用 rk3568_ddr_1560MHz + bl31，不依赖具体板子。
   #   BUILD_DEVICES 已在我们的 Makefile 补丁里登记本机型，
   #   ⇒ make defconfig 会自动带上 CONFIG_PACKAGE_u-boot-hinlink-h68k-rk3568=y。
+
   UBOOT_DEVICE_NAME := hinlink-h68k-rk3568
   # ★ 通用包集（LuCI + 全无线网卡驱动 + 风扇驱动）
   $(Device/hinlink_common)
 endef
-TARGET_DEVICES += hinlink_opc-h68k-a-usb
+TARGET_DEVICES += hinlink_opc-h68k-a-b-usb
 
-# ---- H68K 老机器：c（2022 四网口）----
-
-define Device/hinlink_opc-h68k-c
+# ---- H68K c-d-f（2022~2023.4 四网口，2×RTL8125）：无板载 WiFi（原厂走 M.2 位）----
+define Device/hinlink_opc-h68k-c-d-f
   $(Device/hinlink_h6xk_m2_wifi)
-  DEVICE_MODEL := OPC-H68K c (2022, SATA)
-  DEVICE_DTS := rk3568-hinlink-h68k-c
+  DEVICE_MODEL := OPC-H68K c-d-f (2022~2023.4, SATA)
+  DEVICE_DTS := rk3568-hinlink-h68k-c-d-f
   # ★ u-boot：直接用**上游 OpenWrt 的 HINLINK 支持**（见 patches-uboot/）
   #   上游 package/boot/uboot-rockchip/Makefile 已有本条目，defconfig 与
   #   u-boot dts 由 patches-uboot/ 里那两个 patch 提供（源自 openwrt/main
@@ -226,22 +246,18 @@ define Device/hinlink_opc-h68k-c
   #   TPL/ATF 走通用 rk3568_ddr_1560MHz + bl31，不依赖具体板子。
   #   BUILD_DEVICES 已在我们的 Makefile 补丁里登记本机型，
   #   ⇒ make defconfig 会自动带上 CONFIG_PACKAGE_u-boot-hinlink-h68k-rk3568=y。
+
   UBOOT_DEVICE_NAME := hinlink-h68k-rk3568
   DEVICE_PACKAGES += kmod-r8169 kmod-ata-ahci-dwc
   # ★ 通用包集（LuCI + 全无线网卡驱动 + 风扇驱动）
   $(Device/hinlink_common)
 endef
-TARGET_DEVICES += hinlink_opc-h68k-c
+TARGET_DEVICES += hinlink_opc-h68k-c-d-f
 
-# ★ 2022 C/D/F 的 USB3.0 变体与 2022.8 的 c-usb3 改型，硬件配置完全相同
-#   （都是把 SATA 口改成 USB 3.0），已合并为一份 DTS，用两个 compatible 区分：
-#     hinlink,opc-h68k-c-usb    2022 C/D/F 的 USB3.0 变体
-#     hinlink,opc-h68k-c-usb3   2022.8 的 c-usb3 改型
-#   两者 02_network 映射本来就一致（LAN eth0 eth2 eth3 / WAN eth1）。
-define Device/hinlink_opc-h68k-c-usb3
+define Device/hinlink_opc-h68k-c-d-f-usb
   $(Device/hinlink_h6xk_m2_wifi)
-  DEVICE_MODEL := OPC-H68K c (2022/2022.8, USB3.0)
-  DEVICE_DTS := rk3568-hinlink-h68k-c-usb3
+  DEVICE_MODEL := OPC-H68K c-d-f (2022~2023.4, USB3.0)
+  DEVICE_DTS := rk3568-hinlink-h68k-c-d-f-usb
   # ★ u-boot：直接用**上游 OpenWrt 的 HINLINK 支持**（见 patches-uboot/）
   #   上游 package/boot/uboot-rockchip/Makefile 已有本条目，defconfig 与
   #   u-boot dts 由 patches-uboot/ 里那两个 patch 提供（源自 openwrt/main
@@ -250,52 +266,13 @@ define Device/hinlink_opc-h68k-c-usb3
   #   TPL/ATF 走通用 rk3568_ddr_1560MHz + bl31，不依赖具体板子。
   #   BUILD_DEVICES 已在我们的 Makefile 补丁里登记本机型，
   #   ⇒ make defconfig 会自动带上 CONFIG_PACKAGE_u-boot-hinlink-h68k-rk3568=y。
+
   UBOOT_DEVICE_NAME := hinlink-h68k-rk3568
   DEVICE_PACKAGES += kmod-r8169
   # ★ 通用包集（LuCI + 全无线网卡驱动 + 风扇驱动）
   $(Device/hinlink_common)
 endef
-TARGET_DEVICES += hinlink_opc-h68k-c-usb3
-
-# ---- H68K 老机器：d（2023.4 推荐版）----
-
-define Device/hinlink_opc-h68k-d
-  $(Device/hinlink_h6xk_m2_wifi)
-  DEVICE_MODEL := OPC-H68K d (2023.4, SATA)
-  DEVICE_DTS := rk3568-hinlink-h68k-d
-  # ★ u-boot：直接用**上游 OpenWrt 的 HINLINK 支持**（见 patches-uboot/）
-  #   上游 package/boot/uboot-rockchip/Makefile 已有本条目，defconfig 与
-  #   u-boot dts 由 patches-uboot/ 里那两个 patch 提供（源自 openwrt/main
-  #   patches/106、107）。u-boot 2026.07 的
-  #   dts/upstream/src/arm64/rockchip/ 里已自带 rk3568-hinlink-h68k.dts。
-  #   TPL/ATF 走通用 rk3568_ddr_1560MHz + bl31，不依赖具体板子。
-  #   BUILD_DEVICES 已在我们的 Makefile 补丁里登记本机型，
-  #   ⇒ make defconfig 会自动带上 CONFIG_PACKAGE_u-boot-hinlink-h68k-rk3568=y。
-  UBOOT_DEVICE_NAME := hinlink-h68k-rk3568
-  DEVICE_PACKAGES += kmod-r8169 kmod-ata-ahci-dwc
-  # ★ 通用包集（LuCI + 全无线网卡驱动 + 风扇驱动）
-  $(Device/hinlink_common)
-endef
-TARGET_DEVICES += hinlink_opc-h68k-d
-
-define Device/hinlink_opc-h68k-d-usb
-  $(Device/hinlink_h6xk_m2_wifi)
-  DEVICE_MODEL := OPC-H68K d (2023.4, USB3.0)
-  DEVICE_DTS := rk3568-hinlink-h68k-d-usb
-  # ★ u-boot：直接用**上游 OpenWrt 的 HINLINK 支持**（见 patches-uboot/）
-  #   上游 package/boot/uboot-rockchip/Makefile 已有本条目，defconfig 与
-  #   u-boot dts 由 patches-uboot/ 里那两个 patch 提供（源自 openwrt/main
-  #   patches/106、107）。u-boot 2026.07 的
-  #   dts/upstream/src/arm64/rockchip/ 里已自带 rk3568-hinlink-h68k.dts。
-  #   TPL/ATF 走通用 rk3568_ddr_1560MHz + bl31，不依赖具体板子。
-  #   BUILD_DEVICES 已在我们的 Makefile 补丁里登记本机型，
-  #   ⇒ make defconfig 会自动带上 CONFIG_PACKAGE_u-boot-hinlink-h68k-rk3568=y。
-  UBOOT_DEVICE_NAME := hinlink-h68k-rk3568
-  DEVICE_PACKAGES += kmod-r8169
-  # ★ 通用包集（LuCI + 全无线网卡驱动 + 风扇驱动）
-  $(Device/hinlink_common)
-endef
-TARGET_DEVICES += hinlink_opc-h68k-d-usb
+TARGET_DEVICES += hinlink_opc-h68k-c-d-f-usb
 
 # ---- H68K 新机器（2023末~2024）：不涉及 SATA/USB3 复用，两者可同时用 ----
 

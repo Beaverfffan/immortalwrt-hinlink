@@ -7,21 +7,25 @@ HinLink 的同一块板子常被起多个文件名（改型、批次年份、厂
 导致仓库里出现多份 DTS，但它们的**硬件配置部分完全一样**，
 只有 model / compatible 字符串不同 —— 这对用户毫无价值，只是维护负担。
 
-★ 已人工确认「不合并」的例外
+★ 合并历史
 --------------------------------------
-`h68k-c` 与 `h68k-d`、`h68k-c-usb3` 与 `h68k-d-usb` 这两组的 DTS 硬件配置
-完全相同。
+2026-10-09：`h68k-c-usb` 与 `h68k-c-usb3` 合并（硬件配置完全相同）。
+2026-10-09：`h68k-c` 与 `h68k-d`、`h68k-c-usb3` 与 `h68k-d-usb` 当时记的理由是
+            「02_network 的 WAN 口位置不同」，故未合并 —— **该理由已于
+            2026-10-12 被实机推翻**（h68k-c 的 WAN 实际就是 eth0，两组映射一致）。
+2026-10-12：上述两组**实际合并**，并按用户要求改成世代板本名：
 
-- 2026-10-09 记的理由是「02_network 的 WAN 口位置不同」（c: WAN=eth1，
-  d: WAN=eth0）—— **该理由已于 2026-10-12 被实机推翻**：h68k-c 的 WAN
-  实际就是 **eth0**，更正后两组映射也一致（都是 LAN eth1 eth2 eth3 /
-  WAN eth0）。全 H68K 谱系里只有 **h68k-new 是 WAN=eth1**。
-- 现在保留独立 profile 的唯一理由是**型号名**：厂商 2022 与 2023.4 两代
-  确实按两个型号出货，固件列表里保留 c/d 两个条目对用户更清楚。
+    rk3568-hinlink-h68k-a-b.dts         ← 原 h68k-a.dts（SATA）
+    rk3568-hinlink-h68k-a-b-usb.dts     ← 原 h68k-a-usb.dts（USB3.0）
+    rk3568-hinlink-h68k-c-d-f.dts       ← 原 h68k-c.dts + h68k-d.dts
+    rk3568-hinlink-h68k-c-d-f-usb.dts   ← 原 h68k-c-usb3.dts + h68k-d-usb.dts
+
+    ⇒ a/a-usb **不能**合并：只差 `&sata0 { status }` 一行，而 sata0 与 USB3.0
+      在 RK3568 上争同一颗 combphy0，硬件二选一。
+    ⇒ 因此 `KEEP_SEPARATE` 现为空集（保留机制备用）。
 
 ⇒ 本工具扫出重复后，**必须再查 02_network 的接口映射**才能决定是否合并。
-   映射一致 → 可合并（除非像 c/d 这样为了保住型号名而刻意保留）；
-   映射不同 → 不能合并。
+   映射一致 → 可合并；映射不同 → 不能合并。
 
 判定方法
 --------
@@ -87,13 +91,10 @@ def normalize(text):
 
 NET = os.path.join(root, 'target/linux/rockchip/armv8/base-files/etc/board.d/02_network')
 
-# 已人工确认「不合并」的例外：DTS 与 02_network 映射都相同，
-# 但厂商按两个型号出货，为保住固件列表里的型号名而刻意保留独立 profile。
-# （2026-10-12：原先的理由「WAN 口位置不同」已被实机推翻，见文件头说明。）
-KEEP_SEPARATE = {
-    ('rk3568-hinlink-h68k-c.dts', 'rk3568-hinlink-h68k-d.dts'),
-    ('rk3568-hinlink-h68k-c-usb3.dts', 'rk3568-hinlink-h68k-d-usb.dts'),
-}
+# 已人工确认「不合并」的例外。
+# 2026-10-12：h68k-c/d 与 c-usb3/d-usb **已实际合并**（DTS 与映射都一致），
+# 所以这里现在是空的。保留该机制，供以后出现「内容相同但必须分开」的情况时登记。
+KEEP_SEPARATE = set()
 
 
 def parse_net(path):

@@ -4,7 +4,7 @@ HinLink（芯联）全系列路由器在 immortalwrt 上的设备树与板级配
 **按硬件变体一机一档，不做运行时自适应探测** —— 每个 `compatible` 对应一份独立
 DTS，`02_network` 里 `ethN` 映射写死。
 
-- **18 个机型** · 19 份 DTS · 7 份 dtsi · 2 份内核 patch · 6 个工具脚本 · 3 份厂商 dtb
+- **16 个机型** · 17 份 DTS · 11 份 dtsi · 3 份内核 patch · 15 个工具脚本 · 3 份厂商 dtb
 - 覆盖 RK3568（H66K / H68K / H69K）、RK3528（H28K / H29K / HT2）、RK3588（H88K / **H89K**）
 
 > 本仓库是**支线仓库**，只提供补丁文件，不含完整 OpenWrt 源码。
@@ -58,42 +58,47 @@ python3 tools/dts_syntax_check.py <dts> <include-dirs...>   # DTS 结构
 
 ## 二、机型矩阵
 
-### RK3568 — H66K / H68K / H69K（10 个机型）
+### RK3568 — H66K / H68K / H69K（8 个机型）
 
 | 机型 | 年份/定位 | 口数 | 网络构成 | 板载 WiFi | 存储口 |
 |---|---|---|---|---|---|
 | **h66k** | 无板载网口 | 2 | **0×GMAC** + 2×RTL8125 | — | SATA |
-| **h68k-a** | 2022 双千兆 | 2 | 2×GMAC | AP6256 | **SATA** |
-| h68k-a-usb | 同上 | 2 | 2×GMAC | AP6256 | USB3.0 |
-| **h68k-c** | 2022 四网口 | 4 | 2×GMAC + 2×RTL8125 | M.2 | **SATA** |
-| **h68k-c-usb3** | 2022/2022.8 USB3.0 改型 | 4 | 2×GMAC + 2×RTL8125 | M.2 | USB3.0 |
-| **h68k-d** | 2023.4 推荐版 | 4 | 2×GMAC + 2×RTL8125 | M.2 | **SATA** |
-| h68k-d-usb | 同上 | 4 | 2×GMAC + 2×RTL8125 | M.2 | USB3.0 |
+| **h68k-a-b** | 2022 双千兆（A/B 板） | 2 | 2×GMAC | AP6256 | **SATA** |
+| h68k-a-b-usb | 同上 | 2 | 2×GMAC | AP6256 | USB3.0 |
+| **h68k-c-d-f** | 2022~2023.4 四网口（C/D/F 板） | 4 | 2×GMAC + 2×RTL8125 | M.2 | **SATA** |
+| h68k-c-d-f-usb | 同上 | 4 | 2×GMAC + 2×RTL8125 | M.2 | USB3.0 |
 | **h68k-new** | 2023末~2024 | 4 | 2×GMAC + 2×RTL8125 | AIC8800 | USB3 + SATA |
-| **h69k** | 装 USB 5G 模组 | **3** | 1×GMAC + 2×RTL8125 | AIC8800 | USB3 + SATA |
+| **h69k** | 装 USB 5G 模组 | **3** | 1×GMAC(gmac1) + 2×RTL8125 | AIC8800 | USB3 + SATA |
 | **h69k-mini** | = **H68K max** | **4** | 2×GMAC + 2×RTL8125 | AIC8800 | USB3 + SATA |
 
-**命名约定**（OpenWrt / lede / iStoreOS 互认）：**无后缀 = SATA，`-usb` = USB3.0**。
+**命名约定**：**无后缀 = SATA，`-usb` = USB3.0**（OpenWrt / lede / iStoreOS 互认）。
 
-> ★ **已合并的重复机型**：`h68k-c-usb`（2022 C/D/F 的 USB3.0 变体）与
-> `h68k-c-usb3`（2022.8 的 c-usb3 改型）—— 两者 DTS 硬件配置完全相同，
-> 都是「C/D/F 基础上把 SATA 口改成 USB 3.0」，且 `02_network` 映射一致。
-> 现合并为一份 `rk3568-hinlink-h68k-c-usb3.dts`，用两个 compatible 区分：
-> `hinlink,opc-h68k-c-usb3` 与 `hinlink,opc-h68k-c-usb`。
+**机型名 = 世代板本串**（2026-10-12 起）：`a-b` = A/B 板，`c-d-f` = C/D/F 板 ——
+一眼能看出哪些板本是同一台机器。
+
+> ★ **2026-10-12 合并 + 改名**（用户要求）：
 >
-> ★ **刻意不合并的重复**：`h68k-c` / `h68k-d`、`h68k-c-usb3` / `h68k-d-usb`
-> 这两组的 DTS 硬件描述完全相同。
+> | 原机型（6 个） | 现机型（4 个） | 依据 |
+> |---|---|---|
+> | `h68k-a` / `h68k-a-usb` | `h68k-a-b` / `h68k-a-b-usb` | 仅改名（A/B 板） |
+> | `h68k-c` + `h68k-d` | `h68k-c-d-f` | DTS 归一化后 **0 行差异**，映射也一致 |
+> | `h68k-c-usb3` + `h68k-d-usb` | `h68k-c-d-f-usb` | 同上 |
 >
-> ⚠️ **2026-10-12 实机更正**：原先记的「c 系 WAN=eth1 / d 系 WAN=eth0」**是错的**
-> —— 实机 `h68k-c` 的 WAN 就是 **eth0**。更正后两组连 `02_network` 映射也一致
-> （都是 LAN `eth1 eth2 eth3` / WAN `eth0`），因此在**内容上已是真重复**；
-> 保留独立 profile 只为让「c」「d」两个型号名在固件列表里可区分，
-> 不再有「合并会接错 WAN 口」这条理由。
+> ★ **a 与 a-usb 不能合并**：两者只差 `&sata0 { status }` 一行，而 RK3568 上
+>   sata0 与 USB3.0 争同一颗 `combphy0`，**硬件二选一**，故两个变体必须并存。
+>
+> ★ **旧 compatible 全部保留为次串**（`hinlink,opc-h68k-a` / `-c` / `-d` /
+>   `-c-usb3` / `-d-usb` …），旧 DTB 与厂商写的 board.d 仍能匹配。
+>
+> ⚠️ **WAN 口判据（2026-10-12 实机更正）**：不是「几口」，而是 WAN 焊在哪颗 GMAC：
 >
 > ```
-> a / a-usb   （2 口）      LAN eth1           / WAN eth0
-> c / c-usb3 / d / d-usb    LAN eth1 eth2 eth3 / WAN eth0
-> h68k-new    （2023末~2024）LAN eth0 eth2 eth3 / WAN eth1   ★ 全谱系唯一
+> 老一代（a-b / c-d-f 两组）  WAN = gmac0
+>     h68k-a-b*（2 口）        LAN eth1            / WAN eth0
+>     h68k-c-d-f*（4 口）      LAN eth1 eth2 eth3  / WAN eth0
+> 新一代（h68k-new / h69k / h69k-mini）WAN = gmac1
+>     h68k-new / h69k-mini     LAN eth0 eth2 eth3  / WAN eth1
+>     h69k（gmac0 关掉）       LAN eth1 eth2       / WAN eth0  ← gmac1 独占 eth0
 > ```
 
 ### RK3528 — H28K / H29K / HT2（5 个机型）
@@ -166,9 +171,8 @@ RK3588
 |---|---|---|
 | **世代一（2022~2023）—— WAN 焊在 gmac0** | | |
 | h66k | `eth1` | `eth0` |
-| h68k-a / -a-usb | `eth1` | `eth0` |
-| h68k-c / c-usb / c-usb3 | `eth1 eth2 eth3` | `eth0` |
-| h68k-d / -d-usb | `eth1 eth2 eth3` | `eth0` |
+| h68k-a-b / -a-b-usb | `eth1` | `eth0` |
+| h68k-c-d-f / -c-d-f-usb | `eth1 eth2 eth3` | `eth0` |
 | **世代二（2023末~）—— WAN 焊在 gmac1** | | |
 | h68k-new | `eth0 eth2 eth3` | `eth1` |
 | h69k（三网口） | `eth1 eth2` | `eth0` ⚠️ 名字是 eth0，**芯片是 gmac1**（gmac0 被 disabled） |
@@ -388,8 +392,7 @@ USB3.0   同样需要 combphy0 作 PHY_TYPE_USB3
 
 | 范围 | 是否涉及 |
 |---|---|
-| 2022-2023 老机器（h68k 的 a-b / c / d） | ✅ 互斥，拆 `-usb` 变体（无后缀 = SATA） |
-| `h68k-c-usb3` | 本就是 USB3.0 改型，不拆 |
+| 2022-2023 老机器（`h68k-a-b` / `h68k-c-d-f` 两组，各含 SATA 与 `-usb` 两个变体） | ✅ 互斥，必须拆变体（无后缀 = SATA） |
 | 新机 `h68k-new` / `h69k` 系 | ❌ 不涉及，两者可同时使用 |
 
 **网口数量不受影响** —— 2.5G 网卡走独立的 `pcie30phy`（`phy@fe8c0000`），与 combphy0 无关。
@@ -659,6 +662,9 @@ u-boot: 8 个变体条目 + UBOOT_TARGETS 齐全；defconfig 自动选中
 
 ### 4.12 ★ 2026-10-10 全 18 机型固件编译（LuCI + 全部无线网卡驱动 + 风扇）
 
+> ⚠️ 本节是 2026-10-10 的**历史记录**，当时是 18 个机型。
+> 2026-10-12 已把 h68k 老机器合并/改名为 4 个（见 §4.14），现在是 **16 个机型**。
+
 用户要求：**编译全部机型固件，默认带上 LuCI、所有可能的无线网卡驱动、风扇驱动。**
 
 #### 一、先修「从来没编译通过过」的包名
@@ -681,7 +687,7 @@ u-boot: 8 个变体条目 + UBOOT_TARGETS 齐全；defconfig 自动选中
 
 #### 二、通用包集 `Device/hinlink_common`
 
-`target/linux/rockchip/image/armv8.mk.hinlink` 顶部新增该模板，18 个机型
+`target/linux/rockchip/image/armv8.mk.hinlink` 顶部新增该模板，当时的 18 个机型
 **全部**在 `endef` 前挂 `$(Device/hinlink_common)`，共 59 个包：
 
 * **LuCI**：`luci luci-ssl luci-app-package-manager luci-i18n-base-zh-cn
@@ -773,13 +779,13 @@ make defconfig
 ```
 
 上面的整套流程已脚本化：**`sh tools/build_all.sh`**（可 `sh tools/build_all.sh -j8`），
-它会把 18 个机型写进 stub、清缓存、defconfig、download、编译一条龙跑完。
+它会把机型列表写进 stub、清缓存、defconfig、download、编译一条龙跑完。
 
 #### 六、编译结果（2026-10-10，beaver-11800h，内核 6.18.55）
 
 ```
 make -j16           →  BUILD_EXIT=0
-18 机型 × (squashfs + ext4) sysupgrade  =  36 个 .img.gz
+18 机型 × (squashfs + ext4) sysupgrade  =  36 个 .img.gz   （当时）
 每机型 sha256 互不相同 ✅（18/18 唯一）
 场地 sha256sums 复核                      38/38 OK
 rootfs 内实测含 kmod-mt7921e/s /rtw88-*/rtw89-*/aic8800-* /fancontrol 等 ✅
@@ -851,20 +857,63 @@ fw29new   hinlink,opc-h68k                       → LAN 'eth0 eth2 eth3' / WAN 
 
 ---
 
+### 4.14 ★ 2026-10-12 h68k 老机器合并 + 改名（18 → 16 机型）
+
+用户要求：**合并重复机型，并把名字改成一眼能看出是同一台机器的写法
+`h68k-a-b` 与 `h68k-c-d-f`。**
+
+#### 一、合并/改名映射
+
+| 原机型（6 个） | 现机型（4 个） | DTS | 依据 |
+|---|---|---|---|
+| `hinlink_opc-h68k-a` | `hinlink_opc-h68k-a-b` | `rk3568-hinlink-h68k-a-b.dts` | 仅改名（A/B 板） |
+| `hinlink_opc-h68k-a-usb` | `hinlink_opc-h68k-a-b-usb` | `rk3568-hinlink-h68k-a-b-usb.dts` | 仅改名 |
+| `hinlink_opc-h68k-c` + `-d` | `hinlink_opc-h68k-c-d-f` | `rk3568-hinlink-h68k-c-d-f.dts` | DTS 归一化后 **0 行差异** + 映射一致 |
+| `hinlink_opc-h68k-c-usb3` + `-d-usb` | `hinlink_opc-h68k-c-d-f-usb` | `rk3568-hinlink-h68k-c-d-f-usb.dts` | 同上 |
+
+**`a` 与 `a-usb` 不能合并**：两者只差 `&sata0 { status }` 一行，而 RK3568 上
+`sata0` 与 USB3.0 争同一颗 `combphy0`，**硬件二选一**，两个变体必须并存。
+
+#### 二、旧 compatible 全部保留为**次串**
+
+```
+hinlink,opc-h68k-a-b        , hinlink,opc-h68k-a         , hinlink,h68k, linkstar,h68k, rockchip,rk3568
+hinlink,opc-h68k-a-b-usb    , hinlink,opc-h68k-a-usb     , …
+hinlink,opc-h68k-c-d-f      , hinlink,opc-h68k-c, -d     , …
+hinlink,opc-h68k-c-d-f-usb  , hinlink,opc-h68k-c-usb3, -c-usb, -d-usb, …
+```
+
+⇒ 旧 DTB、厂商写的 board.d、以及 `02_network` / `01_leds` 里原有的旧标签
+**都还能匹配**（我们在两个 board.d 里把新旧标签并排列出）。
+`board_name` 取第一个串，所以新机型名必须排最前。
+
+#### 三、`02_network` 与 `01_leds` 两个文件都要动
+
+新增 compatible 标签必须**同时**加进两个文件的 H68K 分支，否则网口对了但
+WAN 灯会绑到不存在的 netdev 上。另外 `rockchip_setup_macs()` 那块的
+HinLink 兼容串清单也要补 4 个新的（否则 MAC 生成规则失效）。
+
+#### 四、改名带来的「清理项」
+
+- `tools/check_port_count.py` 的 `EXPECT` 表（按 DTS 文件名索引）→ 改成 4 个新名
+- `tools/build_all.sh` 的 `DEVICES` 列表 → 16 个
+- `tools/dup_scan.py` → `KEEP_SEPARATE` 清空（c/d 已实际合并）
+- `tools/gen_hinlink.py` → 是**历史生成器**，产物已改为手工维护；保留仅作参考
+
+---
+
 ## 五、仓库结构
 
 ```
 target/linux/rockchip/
 ├── files/arch/arm64/boot/dts/rockchip/
 │   ├── rk3568-hinlink-h66k.dts               无板载网口（2×GMAC disabled）
-│   ├── rk3568-hinlink-h68k-a.dts             ┐
-│   ├── rk3568-hinlink-h68k-a-usb.dts         │
-│   ├── rk3568-hinlink-h68k-c.dts             │ 10 份 RK3568 拆分机型
-│   ├── rk3568-hinlink-h68k-c-usb3.dts        │ （c-usb 与 c-usb3 已合并）
-│   ├── rk3568-hinlink-h68k-d.dts             │
-│   ├── rk3568-hinlink-h68k-d-usb.dts         │
-│   ├── rk3568-hinlink-h68k-new.dts           │
-│   ├── rk3568-hinlink-h69k-3eth.dts          │
+│   ├── rk3568-hinlink-h68k-a-b.dts           ┐
+│   ├── rk3568-hinlink-h68k-a-b-usb.dts       │
+│   ├── rk3568-hinlink-h68k-c-d-f.dts         │ 8 份 RK3568 拆分机型
+│   ├── rk3568-hinlink-h68k-c-d-f-usb.dts     │ ★ 2026-10-12 合并+改名：
+│   ├── rk3568-hinlink-h68k-new.dts           │   a→a-b；c+d→c-d-f；
+│   ├── rk3568-hinlink-h69k-3eth.dts          │   c-usb3+d-usb→c-d-f-usb
 │   ├── rk3568-hinlink-h69k-mini.dts          ┘
 │   ├── rk3568-hinlink-opc.dtsi               RK3568 公共设备树（来自主线）
 │   ├── rk3528-hinlink-h28k.dts               双口（RTL8211F + PCIe RTL8111H，无 WiFi）
@@ -966,7 +1015,7 @@ patch -p1 --dry-run < <仓库>/patches/9999-fbtft-read-display-offset-from-dt.pa
 | `hinlink-h88k-v3-rk3588` | RK3588 | OPC-H88K V3 | **本仓库自建** `patches-uboot/109` |
 | `hinlink-h89k-rk3588` | RK3588 | OPC-H89K | **本仓库自建** `patches-uboot/109` |
 
-设备定义里统一写 `UBOOT_DEVICE_NAME := <上表的变体名>` —— **18 个机型全部覆盖**，
+设备定义里统一写 `UBOOT_DEVICE_NAME := <上表的变体名>` —— **全部机型覆盖**，
 没有任何机型再留 `BOOT_FLOW :=` 空。
 
 ### 上游已有的部分（H28K / H66K / H68K）
@@ -999,7 +1048,7 @@ define U-Boot/hinlink-h68k-rk3568   $(U-Boot/rk3568/Default)
 ### 我们额外要做的（★ 三件事，缺一不可）
 
 1. **补齐 `BUILD_DEVICES`** —— 上游只登记 `hinlink_h28k` / `hinlink_h66k` /
-   `hinlink_h68k`，而本仓库是按变体拆开的（`hinlink_opc-h68k-c-usb3` 等），
+   `hinlink_h68k`，而本仓库是按变体拆开的（`hinlink_opc-h68k-c-d-f-usb` 等），
    名字对不上。OpenWrt 的 u-boot 包靠 `BUILD_DEVICES` **反向关联**设备，
    不登记则 `make defconfig` 会丢掉 `CONFIG_PACKAGE_u-boot-xxx`。
 2. **把变体名加进 `UBOOT_TARGETS`** —— ★ 最容易漏的一步。
@@ -1177,14 +1226,14 @@ fdtfile=rockchip/rk3568-hinlink-h68k.dtb
 | DTS 语法结构（19 份） | ✅ 18/19 PASS（1 类失败为**既存**的版本错配，见下） |
 | 口数与板级映射一致 | ✅ **19/19** 机型 OK（RK3568 + RK3528 + RK3588） |
 | H89K DTS 完整性 | ✅ **已修复**（2026-10-10 重构为继承 `rk3588-hinlink.dtsi`；eMMC/TF/uart2/PMIC/PCIe2x1l2 全部就位，真实编译 PASS 134257 B）|
-| 重复机型清理 | ✅ 已合并 `h68k-c-usb` / `h68k-c-usb3`；`c` / `d` 系列经确认**不合并** |
+| 重复机型清理 | ✅ **2026-10-12 完成**：h68k 老机器 6 个机型合并为 4 个（`a-b` / `a-b-usb` / `c-d-f` / `c-d-f-usb`），旧 compatible 全部保留 |
 | 设备定义 ↔ DTS 文件对齐 | ✅ 无孤儿、无缺失 |
 | `compatible` 唯一性 | ✅全部唯一 |
 | phandle 引用可解析 | ✅ **RK3568 / RK3588 全部 13份**；⚠️ RK3528 6 份受限于内核（见上） |
 | 厂商 DTB ↔ 上游 DTS 交叉验证 | ✅ H89K 屏 7 项吻合；H28K / H66K / H68K 网络构成吻合 |
 | dtc 完整编译（走 OpenWrt 真实链路） | ✅ **20/20 PASS**，产出 20 个 `image-*.dtb`（见下） |
 | phandle 交叉引用 | ✅ 由 `tools/check_phandle.py` 覆盖（RK3568 + RK3588 全部通过） |
-| u-boot 全机型覆盖 | ✅ **8 个变体全部编译通过**（RK3528×3 + RK3568×2 + RK3588×3），18 机型无遗漏（见 §七） |
+| u-boot 全机型覆盖 | ✅ **8 个变体全部编译通过**（RK3528×3 + RK3568×2 + RK3588×3），全部机型无遗漏（见 §七） |
 | u-boot 实机启动 | ❌ 仅 h28k/h66k/h68k 为上游验证；自建 5 个变体未上机 |
 | 整包编译出固件 | ✅ `BUILD_EXIT_0`，`sysupgrade.img.gz` ×2（h68k-c-usb3，含 LuCI + mt7921e） |
 | 实机启动 | ❌ 未验证（无实机） |
