@@ -1,0 +1,289 @@
+#!/bin/sh
+#
+# HinLink 5G 模组控制 —— 核心实现（CLI + LuCI 共用）
+#
+# ============================ 机理 ============================
+# 各机型的 5G「复位 / 使能」脚在 DTS 里交给了 rfkill-gpio，
+# 内核会在 /sys/class/rfkill/ 下建一个 type=wwan 的设备。
+# 它的 state 属性是 DEVICE_ATTR_RW（6.18 net/rfkill/core.c），可写：
+#
+#   echo 0 > /sys/class/rfkill/rfkillN/state   # set_block(true)
+#        -> rfkill_gpio_set_power(blocked = 1)
+#        -> gpiod_set_value(reset_gpio, 0)      = 复位有效
+#   echo 1 > /sys/class/rfkill/rfkillN/state   # set_block(false)
+#        -> gpiod_set_value(reset_gpio, 1)      = 复位释放
+#
+# 所以「0 -> 等一会儿 -> 1」就是一次完整的硬复位脉冲。
+# ★ 不需要装 rfkill 命令（纯 sysfs，只要 root / CAP_NET_ADMIN）。
+#
+# 详见 docs/HARDWARE.md §四。
+#
+# ============================ 子命令 ============================
+#   status        人类可读的状态（CLI 默认）
+#   status-json   状态 JSON（rpcd / LuCI 用）
+#   reset         软复位：拉复位 -> 等 -> 释放 -> 等模组启动
+#   power-off     只拉复位 / 断电（保持）
+#   power-on      只释放 / 上电
+#   usb-reset     只在 USB 层重新枚举模组（不做 pin 复位）
+#
+# 时序取自 UCI（/etc/config/hinlink-modem），环境变量可临时覆盖：
+#   HINLINK_MODEM_HOLD_MS    复位保持时长（默认 300 ms）
+#   HINLINK_MODEM_BOOT_WAIT  释放后等启动（默认 2 s）
+#
+
+CFG_SECTION="hinlink-modem.modem"
+
+# ------------------------------------------------------------------ 配置
+
+cfg_get() {
+	# $1 = 键名  $2 = 默认值  $3 = 环境变量名
+	eval "_env=\${$3}"
+	if [ -n "$_env" ]; then
+		printf '%s' "$_env"
+		return
+	fi
+	_v="$(uci -q get "$CFG_SECTION.$1" 2>/dev/null)"
+	[ -n "$_v" ] && printf '%s' "$_v" || printf '%s' "$2"
+}
+
+load_cfg() {
+	HOLD_MS="$(cfg_get hold_ms 300 HINLINK_MODEM_HOLD_MS)"
+	BOOT_WAIT="$(cfg_get boot_wait 2 HINLINK_MODEM_BOOT_WAIT)"
+	case "$HOLD_MS" in ''|*[!0-9]*) HOLD_MS=300 ;; esac
+	case "$BOOT_WAIT" in ''|*[!0-9]*) BOOT_WAIT=2 ;; esac
+}
+
+# ------------------------------------------------------------------ helper
+
+json_escape() {
+	# 够用的转义：反斜杠、双引号，并去掉控制字符
+	printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr -d '\000-\037'
+}
+
+find_wwan_rfkill() {
+	local d t
+	for d in /sys/class/rfkill/rfkill*; do
+		[ -d "$d" ] || continue
+		t="$(cat "$d/type" 2>/dev/null)"
+		[ "$t" = "wwan" ] && { echo "${d##*/}"; return 0; }
+	done
+	return 1
+}
+
+rfkill_state_path() {
+	local dev
+	dev="$(find_wwan_rfkill)" || return 1
+	echo "/sys/class/rfkill/$dev/state"
+}
+
+set_rfkill() {
+	local val="$1" p
+	p="$(rfkill_state_path)" || {
+		echo "hinlink-modem: 没有 type=wwan 的 rfkill 设备" >&2
+		echo "  （该机型 DTS 未定义 rfkill-gpio，或内核没编 CONFIG_RFKILL_GPIO）" >&2
+		return 1
+	}
+	echo "$val" > "$p" 2>/dev/null || {
+		echo "hinlink-modem: 写 $p 失败（需要 root / CAP_NET_ADMIN）" >&2
+		return 1
+	}
+	return 0
+}
+
+msleep() {
+	if command -v usleep >/dev/null 2>&1; then
+		usleep "$(( $1 * 1000 ))"
+	else
+		sleep 1
+	fi
+}
+
+# ------------------------------------------------------------------ USB 侧
+
+# 常见 5G/4G 模组厂家的 USB VID（小写十六进制）
+MODEM_VIDS="2c7c 2cb7 2dee 0e8d 05c6 19d2 12d1 1bc7 0408 413c 0bdb 1199 03f0"
+
+find_modem_usb() {
+	local d v
+	for d in /sys/bus/usb/devices/*; do
+		[ -f "$d/idVendor" ] || continue
+		[ -f "$d/busnum" ] || continue        # 只要设备节点，不要接口(:x.y)
+		v="$(cat "$d/idVendor" 2>/dev/null | tr 'A-Z' 'a-z')"
+		for w in $MODEM_VIDS; do
+			[ "$v" = "$w" ] && { echo "$d"; return 0; }
+		done
+	done
+	return 1
+}
+
+usb_reset() {
+	local d name vid pid n=0
+	d="$(find_modem_usb)" || {
+		echo "USB 侧：未找到常见模组的 USB 设备（VID 白名单）"
+		return 1
+	}
+	name="${d##*/}"
+	vid="$(cat "$d/idVendor" 2>/dev/null)"
+	pid="$(cat "$d/idProduct" 2>/dev/null)"
+	echo "USB 侧：重新枚举 $name ($vid:$pid)"
+
+	# 优先用 usbutils 带的 usbreset（USBDEVFS_RESET ioctl，真正 reset 端口）
+	if command -v usbreset >/dev/null 2>&1; then
+		if usbreset "$vid:$pid" >/dev/null 2>&1; then
+			echo "  usbreset $vid:$pid 成功"
+			return 0
+		fi
+		echo "  usbreset 失败，退回 authorized 开关"
+	fi
+
+	# 退回：authorized 0 -> 1（让内核重新枚举该设备）
+	if [ -w "$d/authorized" ]; then
+		echo 0 > "$d/authorized" 2>/dev/null || {
+			echo "  写 $d/authorized 失败" >&2; return 1; }
+		sleep 1
+		echo 1 > "$d/authorized" 2>/dev/null || {
+			echo "  写 $d/authorized（恢复）失败" >&2; return 1; }
+		echo "  authorized 0 -> 1 完成"
+		return 0
+	fi
+	echo "  该设备没有 authorized 节点，无法 USB 复位" >&2
+	return 1
+}
+
+# ------------------------------------------------------------------ status
+
+status_json() {
+	local dev="" state="" name="" type="" found=0
+	dev="$(find_wwan_rfkill)" || dev=""
+	if [ -n "$dev" ]; then
+		found=1
+		name="$(cat /sys/class/rfkill/$dev/name 2>/dev/null)"
+		type="$(cat /sys/class/rfkill/$dev/type 2>/dev/null)"
+		state="$(cat /sys/class/rfkill/$dev/state 2>/dev/null)"
+	fi
+
+	# regulator（供电级）—— 只有 H29K / H88K / H89K 有
+	local reg="" r
+	if [ -r /sys/kernel/debug/regulator/regulator_summary ]; then
+		reg="$(grep -io 'vcc3v3_modem\|modem_enable[^ ]*' \
+			/sys/kernel/debug/regulator/regulator_summary 2>/dev/null \
+			| sort -u | tr '\n' ' ')"
+	fi
+
+	# USB 侧
+	local ud="" uvid="" upid=""
+	ud="$(find_modem_usb)" || ud=""
+	if [ -n "$ud" ]; then
+		uvid="$(cat "$ud/idVendor" 2>/dev/null)"
+		upid="$(cat "$ud/idProduct" 2>/dev/null)"
+	fi
+
+	printf '{'
+	printf '"rfkill_found":%s' "$found"
+	[ "$found" = 1 ] && printf ',"rfkill_dev":"%s","rfkill_name":"%s","rfkill_type":"%s","state":%s' \
+		"$(json_escape "$dev")" "$(json_escape "$name")" "$(json_escape "$type")" \
+		"${state:-0}"
+	printf ',"hold_ms":%s,"boot_wait":%s' "$HOLD_MS" "$BOOT_WAIT"
+	printf ',"regulator":"%s"' "$(json_escape "$reg")"
+	printf ',"usb_dev":"%s","usb_vid":"%s","usb_pid":"%s"' \
+		"$(json_escape "${ud##*/}")" "$(json_escape "$uvid")" "$(json_escape "$upid")"
+	printf ',"usb_tty":"%s"' "$(json_escape "$(ls /dev/ttyUSB* /dev/cdc-wdm* /dev/ttyACM* 2>/dev/null | tr '\n' ' ')")"
+	printf ',"usb_raw":"%s"' "$(json_escape "$(lsusb 2>/dev/null | grep -iE '2c7c|2cb7|2dee|0e8d|05c6|19d2|12d1|1bc7' | tr '\n' '|')")"
+	printf '}'
+}
+
+status() {
+	local dev p
+
+	echo "=== rfkill（type=wwan）==="
+	dev="$(find_wwan_rfkill)" || dev=""
+	if [ -n "$dev" ]; then
+		p="/sys/class/rfkill/$dev"
+		echo "  $dev  name=$(cat $p/name 2>/dev/null)  type=$(cat $p/type 2>/dev/null)"
+		echo "        state=$(cat $p/state 2>/dev/null)  soft=$(cat $p/soft 2>/dev/null)  hard=$(cat $p/hard 2>/dev/null)"
+		echo "        （state: 1 = unblocked/工作，0 = blocked/复位）"
+	else
+		echo "  （无）—— 该机型若带 5G 模组，说明 DTS 里没定义 rfkill-gpio"
+	fi
+
+	echo "=== regulator（供电，常开）==="
+	if [ -r /sys/kernel/debug/regulator/regulator_summary ]; then
+		grep -i modem /sys/kernel/debug/regulator/regulator_summary \
+			|| echo "  （无 modem 相关 regulator —— H69K 只有一路，属正常）"
+	else
+		echo "  （debugfs 未挂载；可先 mount -t debugfs none /sys/kernel/debug）"
+	fi
+
+	echo "=== 模组 USB 枚举 ==="
+	if [ -d /sys/bus/usb/devices ]; then
+		local hit
+		hit="$(grep -lsiE 'quectel|fibocom|foxconn|mediatek|qualcomm|2c7c|2cb7|2dee|0e8d|05c6|19d2|12d1' \
+			/sys/bus/usb/devices/*/manufacturer \
+			/sys/bus/usb/devices/*/product 2>/dev/null \
+			| sed 's|/[^/]*$||' | sort -u | tr '\n' ' ')"
+		[ -n "$hit" ] && echo "  命中: $hit" || echo "  未匹配到常见模组 USB 描述串"
+	fi
+	local ttys
+	ttys="$(ls /dev/ttyUSB* /dev/cdc-wdm* /dev/ttyACM* 2>/dev/null | tr '\n' ' ')"
+	[ -n "$ttys" ] && echo "  字符设备: $ttys" || echo "  无 ttyUSB* / cdc-wdm* / ttyACM*"
+
+	if command -v lsusb >/dev/null 2>&1; then
+		echo "=== lsusb ==="
+		lsusb 2>/dev/null | sed 's/^/  /'
+	else
+		echo "=== lsusb ==="
+		echo "  （未安装 usbutils；本固件已内置，若缺失请重刷）"
+	fi
+
+	echo "=== 相关内核日志（尾 8 行）==="
+	dmesg 2>/dev/null | grep -iE 'rfkill|modem|qmi|option|cdc|usb [0-9]' | tail -8
+}
+
+# ------------------------------------------------------------------ 动作
+
+power_off() {
+	echo "拉复位 / 断电 ..."
+	set_rfkill 0
+}
+
+power_on() {
+	echo "释放复位 / 上电 ..."
+	set_rfkill 1
+}
+
+do_reset() {
+	load_cfg
+	echo "== 软复位 5G 模组（保持 ${HOLD_MS}ms，释放后等 ${BOOT_WAIT}s）=="
+	power_off || return 1
+	msleep "$HOLD_MS"
+	power_on || return 1
+	sleep "$BOOT_WAIT"
+	echo "完成。可用 'hinlink-modem status' 或 'dmesg | grep -i usb' 看枚举。"
+}
+
+# ------------------------------------------------------------------ main
+
+load_cfg
+
+case "$1" in
+	status)               status ;;
+	status-json|status_json) status_json ;;
+	reset)                do_reset ;;
+	# 连字符与下划线都支持：
+	#   CLI 习惯写 power-off；而 /etc/init.d/ 下走 rc.common 时
+	#   EXTRA_COMMANDS 的条目会被当成**函数名**调用，shell 函数名不能含
+	#   `-`，所以那边的命令名是 power_off —— 这里两种都收。
+	power-off|power_off)  power_off ;;
+	power-on|power_on)    power_on ;;
+	usb-reset|usb_reset)  usb_reset ;;
+	"")
+		cat <<EOF
+用法: $0 {status|status-json|reset|power-off|power-on|usb-reset}
+      （power-off / power-on / usb-reset 也接受下划线写法）
+EOF
+		;;
+	*)
+		echo "未知子命令: $1" >&2
+		exit 1
+		;;
+esac

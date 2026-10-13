@@ -145,7 +145,7 @@ print("[6] base-files 其它文件（init.d / hotplug.d / uci-defaults）")
 #       Windows 侧 git 不保留可执行位，所以这里对脚本目录统一 chmod 0755。
 bf_src = os.path.join(SRC, "target/linux/rockchip/armv8/base-files")
 bf_dst = os.path.join(ROCK, "armv8/base-files")
-EXEC_DIRS = ("init.d", "hotplug.d", "uci-defaults")
+EXEC_DIRS = ("init.d", "hotplug.d", "uci-defaults", "libexec")
 nfile = 0
 if os.path.isdir(bf_src):
     for root, dirs, files in os.walk(bf_src):

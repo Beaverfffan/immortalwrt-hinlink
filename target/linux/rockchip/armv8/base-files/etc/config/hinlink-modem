@@ -1,0 +1,23 @@
+# HinLink 5G 模组控制 —— 默认配置
+#
+# 这个文件由 target base-files 首次安装生成；sysupgrade 会保留它
+# （/etc/config/ 属于保留项），所以升级不会覆盖你的修改。
+#
+# 生效方式：/etc/init.d/hinlink-modem 在 start() 时读取；
+#          LuCI「网络 → 5G 模组」页面保存后自动应用。
+
+config hinlink-modem 'modem'
+	# 开机是否执行本服务的 start（0 = 完全不碰模组，只留手动命令）
+	option enabled '1'
+
+	# 开机是否自动软复位一次（1 = 复位）。
+	# 模组冷启动不认网卡/注不上网时可以打开。
+	option auto_reset '0'
+
+	# 拉复位的保持时长（毫秒）。模组手册一般要求 RESET 脉宽 >= 100us，
+	# 这里默认给 300ms 留足余量；若模组有特殊要求再调。
+	option hold_ms '300'
+
+	# 复位释放后等模组启动的时间（秒）。
+	# 原 regulator 版的 startup-delay-us = 2s 就是等这个，现由脚本承担。
+	option boot_wait '2'

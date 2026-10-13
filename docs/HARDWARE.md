@@ -442,16 +442,38 @@ sleep 0.3
 echo 1 > /sys/class/rfkill/rfkill0/state   # 释放 / 上电
 ```
 
-**封装命令**（已进固件 `base-files/etc/init.d/hinlink-modem`）：
+**① LuCI 页面**：**网络 → 5G 模组**
+状态（每 5 秒轮询）+ 四个动作按钮（软复位 / 断电 / 上电 / 仅 USB 重枚举）
++ 开机行为配置（`enabled` / `auto_reset` / `hold_ms` / `boot_wait`）。
+后端是 rpcd 插件 `hinlink-modem` → `/usr/libexec/hinlink-modem`。
+
+**② CLI**（`/etc/init.d/hinlink-modem`）—— 注意命令名用**下划线**：
+rc.common 会把 `EXTRA_COMMANDS` 的条目当函数名调用，而函数名不能含 `-`。
 
 ```sh
-/etc/init.d/hinlink-modem status        # rfkill / regulator / USB 状态
-/etc/init.d/hinlink-modem reset         # 软复位（拉 300ms → 释放 → 等 2s）
-/etc/init.d/hinlink-modem power-off     # 只拉复位（保持）
-/etc/init.d/hinlink-modem power-on      # 只释放
+/etc/init.d/hinlink-modem status        # 人类可读状态
+/etc/init.d/hinlink-modem reset         # 软复位（拉 hold_ms → 释放 → 等 boot_wait）
+/etc/init.d/hinlink-modem power_off     # 只拉复位（保持）
+/etc/init.d/hinlink-modem power_on      # 只释放
+/etc/init.d/hinlink-modem usb_reset     # 只在 USB 层重新枚举（不碰 pin）
 ```
 
-时序可用环境变量覆盖：`HINLINK_MODEM_HOLD_MS`（默认 300 ms）、
+**③ 直接调核心脚本**（连字符 / 下划线都接受）：
+
+```sh
+/usr/libexec/hinlink-modem status-json  # JSON，给脚本 / rpcd 消费
+/usr/libexec/hinlink-modem reset
+/usr/libexec/hinlink-modem power-off
+/usr/libexec/hinlink-modem usb-reset
+```
+
+**④ USB 层复位**：`usbreset <vid>:<pid>`（usbutils 自带），
+或 `hinlink-modem usb-reset`（按 VID 白名单自动找模组）。
+与 pin 复位互补 —— 模组固件卡死时 pin 复位更彻底；
+只是枚举丢了，USB 重枚举就够。
+
+时序优先级：**环境变量 > UCI > 内置默认值**：
+`HINLINK_MODEM_HOLD_MS`（默认 300 ms）、
 `HINLINK_MODEM_BOOT_WAIT`（默认 2 s）。
 
 **开机自动复位一次**（可选）：在 `/etc/rc.local` 的 `exit 0` 之前加一行

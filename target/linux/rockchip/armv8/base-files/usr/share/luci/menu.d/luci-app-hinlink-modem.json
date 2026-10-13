@@ -1,0 +1,13 @@
+{
+	"admin/network/hinlink-modem": {
+		"title": "5G 模组",
+		"order": 65,
+		"action": {
+			"type": "view",
+			"path": "hinlink-modem"
+		},
+		"depends": {
+			"acl": [ "luci-app-hinlink-modem" ]
+		}
+	}
+}

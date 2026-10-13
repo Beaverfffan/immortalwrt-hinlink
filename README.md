@@ -1034,6 +1034,78 @@ manifest 里 `kmod-mt7915e` / `kmod-mt7915-firmware` / `kmod-mt7916-firmware`
 
 ---
 
+### 4.18 ★ 2026-10-13 usbutils + LuCI「5G 模组」控制面板
+
+用户要求：① 加 usbutils 让 `lsusb` 有内容；② 给 rfkill 写个 LuCI，
+把「复位 5G pin」变成手动选项。
+
+#### ① usbutils（还捎带一个 usbreset）
+
+此前固件里**根本没有 `lsusb`** —— busybox 的 lsusb applet 未启用，
+执行直接 `not found`，排查模组 / USB 网卡枚举很不方便。
+
+加入 `usbutils`（自动带 `usbids` / `libusb-1.0` / `libudev-zero`）：
+
+| 文件 | 说明 |
+|---|---|
+| `/usr/bin/lsusb` → `/usr/libexec/lsusb-usbutils` | 完整版 lsusb（`lsusb` / `-t` / `-v`） |
+| `/usr/share/hwdata/usb.ids` | USB ID 库 —— 有它才显示厂商名（如 "Quectel"），注意实际路径是 `hwdata/` 不是 `share/` 根 |
+| **`/usr/bin/usbreset`** | ★ usbutils 自带，对单个 USB 设备做 `USBDEVFS_RESET` —— **正好补上 pin 复位之外的 USB 层复位** |
+
+#### ② LuCI 控制面板：网络 → 5G 模组
+
+全部落在 target base-files（与 hinlink-modem 同一套，不做独立 ipk）：
+
+| 路径 | 作用 |
+|---|---|
+| `/usr/libexec/hinlink-modem` | **核心实现**（CLI 与 LuCI 共用）：`status` / `status-json` / `reset` / `power-off` / `power-on` / `usb-reset` |
+| `/etc/init.d/hinlink-modem` | rc.common 薄壳（可 `enable`；`start()` 读 UCI 决定是否自动复位） |
+| `/usr/libexec/rpcd/hinlink-modem` | **rpcd shell 插件**，把上面转成 ubus 方法 |
+| `/etc/config/hinlink-modem` | UCI：`enabled` / `auto_reset` / `hold_ms` / `boot_wait` |
+| `/usr/share/luci/menu.d/luci-app-hinlink-modem.json` | 菜单项（网络 → 5G 模组，order 65） |
+| `/usr/share/rpcd/acl.d/luci-app-hinlink-modem.json` | ACL（`ubus hinlink-modem` 的 read/write） |
+| `/www/luci-static/resources/view/hinlink-modem.js` | 前端视图 |
+
+页面三块：
+
+1. **状态**（每 5 秒轮询）—— rfkill 设备与 `state`、供电 regulator、模组 USB
+   （VID:PID）、`/dev/ttyUSB*`·`cdc-wdm*`·`ttyACM*`、当前时序参数
+2. **手动动作** —— 软复位 / 断电（拉复位）/ 上电（释放复位）/ **仅 USB 重枚举**
+3. **开机行为**（UCI 表单，走标准「保存并应用」）—— 启用服务、开机自动复位一次、
+   复位保持时长、释放后等启动
+
+#### 为什么用 rpcd shell 插件，而不是 ACL 里的 `file.exec`
+
+`luci-app-h69k-fan` 用的是 `file` + `exec`（授权具体命令行）。
+那种写法对「命令行匹配规则」有版本差异，容易踩坑；
+rpcd 插件的 ACL 只要 `"ubus": { "hinlink-modem": [ "reset", … ] }`，
+与 LuCI 的 `rpc.declare` 天然对应，干净得多。
+
+插件**没用 jshn**（少一层依赖），直接手拼 JSON —— 输出结构简单，
+并已做转义（反斜杠 / 双引号 / 控制字符）。
+
+#### 离线验证（不用实机就能验后端）
+
+`status-json` 与 rpcd 插件的 `list` / `call status` / `call reset`
+都在构建机上用 `sh` 跑过，输出经 `python3 -m json.tool` 校验为合法 JSON：
+
+```json
+{"rfkill_found":0,"hold_ms":300,"boot_wait":2,"regulator":"","usb_dev":"",...}
+```
+
+（构建机没有 wwan rfkill，所以 `rfkill_found:0`、`reset` 返回
+`{"ok":false,"message":"…没有 type=wwan 的 rfkill 设备…"}` —— 符合预期。）
+
+#### 一个 rc.common 的坑
+
+`EXTRA_COMMANDS` 的条目会被 rc.common 当**函数名**调用，
+而 shell 函数名**不能含 `-`** ⇒ init.d 下的命令名用下划线
+（`power_off` / `power_on` / `usb_reset`）；
+核心脚本 `/usr/libexec/hinlink-modem` 同时接受连字符写法
+（`hinlink-modem power-off`），两种都不会踩空。
+
+---
+
 ## 五、仓库结构
 
 ```
