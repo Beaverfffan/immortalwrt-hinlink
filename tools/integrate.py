@@ -212,4 +212,21 @@ if os.path.isdir(bf_src):
 else:
     print("  (无 base-files 目录，跳过)")
 
+print("[7] package/beaverfffan（本地包：风扇 / 5G复位 / ssd1306 / aic8800）")
+# 这些是**本地包**，不属于任何 feed，直接整目录同步进内核树的 package/ 下。
+# 用 rmtree + copytree 而不是逐个拷贝：包目录里会有增删改名（比如给上游
+# fancontrol 换默认配置），只拷不删会留下旧文件、甚至出现两个同名包。
+pkg_src = os.path.join(SRC, "package/beaverfffan")
+pkg_dst = os.path.join(DST, "package/beaverfffan")
+if os.path.isdir(pkg_src):
+    if os.path.isdir(pkg_dst):
+        shutil.rmtree(pkg_dst)
+    shutil.copytree(pkg_src, pkg_dst)
+    n = sum(len(fs) for _, _, fs in os.walk(pkg_dst))
+    for d in sorted(os.listdir(pkg_dst)):
+        print("  %s" % d)
+    print("  同步 %d 个文件 -> package/beaverfffan" % n)
+else:
+    print("  (无 package/beaverfffan，跳过)")
+
 print("集成完成")

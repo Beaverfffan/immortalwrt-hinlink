@@ -1500,6 +1500,71 @@ base-files 拷进内核树，**从不删除**已废弃的文件。于是改名�
 
 ---
 
+### 4.23 ★ 2026-10-14 5G 复位插件包化 + 新增 `package/beaverfffan` + 完整发行仓库
+
+**① 5G 复位从 base-files 裸文件改成正式 ipk 包**
+
+`package/beaverfffan/luci-app-hinlink-modem-hardreset/`（Makefile + `files/`），
+原先躺在 `target/.../base-files/` 下的 10 个文件**已全部移走**（base-files 现在
+只剩 `etc/board.d/` 的三个映射文件）。
+
+裸文件形式只能随固件内置 —— 不能单独装、不能卸、不能升级，也没法在
+`menuconfig` 里勾选。包化之后它就是个正常 ipk，同时仍然是固件默认的一部分
+（`configs/*.config` 里显式选中）。
+
+Makefile **不走 `luci.mk`**：那是 `feeds/luci` 下的相对路径机制，本包在
+`package/beaverfffan/` 里没有那个相对关系；手写 install 段反而更清楚，
+顺便把文件权限一次钉死（脚本 0755 / 数据 0644 —— 权限错了 LuCI 会 404、
+rpcd 不加载插件）。
+
+**② 新增 `package/beaverfffan/`，四个插件**
+
+| 包 | 说明 |
+|---|---|
+| `fancontrol` + `luci-app-fancontrol` | JiaY-shi 的通用 hwmon PWM 温控风扇。★ **默认配置改成 `enabled='1'`**（上游默认是关的），其余参数与上游一致 |
+| `luci-app-hinlink-modem-hardreset` | 自研，见 ① |
+| `luci-app-oled` | `jjm2473/luci-app-oled`（SSD1306 0.91″ I2C OLED） |
+| `aic8800` | lede 的 AIC8800 驱动（PCIe / SDIO / USB 三形态） |
+
+★ `luci-app-fancontrol` 上游用的是相对路径 `include ../../luci.mk`，搬进
+`package/beaverfffan/` 后会指到不存在的 `package/luci.mk` ⇒ 已改成
+`include $(TOPDIR)/feeds/luci/luci.mk`。
+
+**③ 新增完整发行仓库 `Beaverfffan/immortalwrt-hinlink-full`**
+
+一棵**完整的 immortalwrt 源码树**（base `305089f`，排除构建产物后 88 MB）
++ 本适配层固化进去 + `configs/`（16 机型 defconfig）+ `docs/devices/`
+（每机型一份说明）+ `package/beaverfffan/`。clone 下来直接
+
+```sh
+cp configs/<机型>.config .config && make defconfig && make -j$(nproc)
+```
+
+**不再需要跑 `integrate.py`**（本仓库仍然保留，用于往已有的内核树里注入改动）。
+
+config 由 `tools/gen_configs.py` 生成：拿一份已编过固件的**全机型** `.config`
+当底稿 → 收敛成单机型 → 交给 `make defconfig` 校验一遍 → 再逐份检查追加的
+包有没有被静默丢弃（包名写错 / 依赖不满足时 `defconfig` 会悄悄删掉那一行，
+这是最容易漏的坑）。
+
+**④ 5G 复位面板只编进 5 个机型**（2026-10-14 用户指定：有风扇 **且** 有 5G 复位脚）
+
+| 机型 | 风扇 | 5G 复位脚 | 编面板 |
+|---|---|---|---|
+| h69k / h69k-mini | ✅ pwm-fan（PWM0 绑 cpu_thermal） | ✅ `GPIO0_C0` | ✅ |
+| h88k-v2 / h88k-v3 / h89k | ✅ pwm14（定义在 `rk3588-hinlink.dtsi`） | ✅ `GPIO4_C6` | ✅ |
+| h29k-v1.3-1.14 / v5-1.14 / v5-1.49 | ❌ 无风扇 | ✅ `GPIO4_B4` | ❌ 按条件排除 |
+| h28k / ht2 / h66k / h68k 全系 ×5 | ❌ | ❌ | ❌ |
+
+> 硬件能力是从 DTS 里逐个 grep 出来的（`pwm-fan|fan:|cooling-levels` 与
+> `rfkill`），不是凭印象填的。H29K 三个机型**有复位脚但没有风扇**，按该条件
+> 被排除 —— 要加回来改 `tools/gen_configs.py` 的 `MODEM_APP` 即可。
+
+**⑤ `integrate.py` 新增 `[7]`**：整目录同步 `package/beaverfffan` 进内核树
+（`rmtree` + `copytree`，保证增删改名都被同步，不会留下旧包）。
+
+---
+
 ## 五、仓库结构
 
 ```
