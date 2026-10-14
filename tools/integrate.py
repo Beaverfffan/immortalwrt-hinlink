@@ -150,8 +150,50 @@ bf_src = os.path.join(SRC, "target/linux/rockchip/armv8/base-files")
 bf_dst = os.path.join(ROCK, "armv8/base-files")
 EXEC_DIRS = ("init.d", "hotplug.d", "uci-defaults", "libexec")
 BOARD_D_MERGE = ("01_leds", "02_network")   # 这两个走合并，不做整文件拷贝
+
+# 我方的文件名特征 —— 删除旧文件时只认这些，绝不碰官方文件。
+MINE_MARKERS = ("hinlink", "hlink")
+
 nfile = 0
 if os.path.isdir(bf_src):
+    # --- 先收集源树里应有的相对路径 ---
+    want = set()
+    for root, dirs, files in os.walk(bf_src):
+        rel = os.path.relpath(root, bf_src)
+        parts = [] if rel == "." else rel.split(os.sep)
+        for f in files:
+            if "board.d" in parts and f in BOARD_D_MERGE:
+                continue
+            want.add(os.path.normpath(os.path.join(rel, f)))
+
+    # --- 清理：目标树里「名字像我方的、但源树已经没有了」的文件 ---
+    # ★ 为什么必须做：本脚本只拷不删，一旦我方改名（如 hinlink-modem ->
+    #   hinlink-modem-hardreset）或删掉某个文件，旧文件会永久残留在内核树里，
+    #   最终被打进固件 —— 表现为「旧 LuCI 页面/旧 ubus 对象仍在」。
+    removed = []
+    for root, dirs, files in os.walk(bf_dst):
+        rel = os.path.relpath(root, bf_dst)
+        for f in files:
+            if not any(m in f.lower() for m in MINE_MARKERS):
+                continue
+            rp = os.path.normpath(os.path.join(rel, f)) if rel != "." else f
+            if rp not in want:
+                os.remove(os.path.join(root, f))
+                removed.append(rp)
+    # 顺手清掉空目录（我方创建过、现在没文件的）
+    for root, dirs, files in os.walk(bf_dst, topdown=False):
+        if root == bf_dst:
+            continue
+        try:
+            if not os.listdir(root):
+                os.rmdir(root)
+        except OSError:
+            pass
+    if removed:
+        print("  清理 %d 个已废弃的我方文件：" % len(removed))
+        for r in sorted(removed):
+            print("    - %s" % r)
+
     for root, dirs, files in os.walk(bf_src):
         rel = os.path.relpath(root, bf_src)
         parts = [] if rel == "." else rel.split(os.sep)

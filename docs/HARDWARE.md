@@ -416,7 +416,7 @@ lsusb | grep -iE "quectel|fibocom|2cb7|2dee|0e8d"
 ls /dev/ttyUSB* /dev/cdc-wdm* 2>/dev/null
 
 # 4. 一键看全部
-/etc/init.d/hinlink-modem status
+/etc/init.d/hinlink-modem-hardreset status
 ```
 
 ### 4.6 5G 模组 UART
@@ -428,7 +428,7 @@ H29K v5 有 `&uart2`（5G 串口），v1.3 没有。这是 v1.3/v5 的重要区�
 
 原 regulator 版带 `startup-delay-us = 2000000`（上电后等模组稳定）。
 改用 `rfkill-gpio` 后**内核侧没有**这个延时（rfkill 无延时机制），
-改由 `/etc/init.d/hinlink-modem` 在复位后等待
+改由 `/etc/init.d/hinlink-modem-hardreset` 在复位后等待
 （`HINLINK_MODEM_BOOT_WAIT`，默认 2 s）。
 开机路径不依赖它 —— 网络层（modemmanager / proto）本来就有超时重试。
 
@@ -445,30 +445,30 @@ echo 1 > /sys/class/rfkill/rfkill0/state   # 释放 / 上电
 **① LuCI 页面**：**网络 → 5G 模组**
 状态（每 5 秒轮询）+ 四个动作按钮（软复位 / 断电 / 上电 / 仅 USB 重枚举）
 + 开机行为配置（`enabled` / `auto_reset` / `hold_ms` / `boot_wait`）。
-后端是 rpcd 插件 `hinlink-modem` → `/usr/libexec/hinlink-modem`。
+后端是 rpcd 插件 `hinlink-modem-hardreset` → `/usr/libexec/hinlink-modem-hardreset`。
 
-**② CLI**（`/etc/init.d/hinlink-modem`）—— 注意命令名用**下划线**：
+**② CLI**（`/etc/init.d/hinlink-modem-hardreset`）—— 注意命令名用**下划线**：
 rc.common 会把 `EXTRA_COMMANDS` 的条目当函数名调用，而函数名不能含 `-`。
 
 ```sh
-/etc/init.d/hinlink-modem status        # 人类可读状态
-/etc/init.d/hinlink-modem reset         # 软复位（拉 hold_ms → 释放 → 等 boot_wait）
-/etc/init.d/hinlink-modem power_off     # 只拉复位（保持）
-/etc/init.d/hinlink-modem power_on      # 只释放
-/etc/init.d/hinlink-modem usb_reset     # 只在 USB 层重新枚举（不碰 pin）
+/etc/init.d/hinlink-modem-hardreset status        # 人类可读状态
+/etc/init.d/hinlink-modem-hardreset reset         # 软复位（拉 hold_ms → 释放 → 等 boot_wait）
+/etc/init.d/hinlink-modem-hardreset power_off     # 只拉复位（保持）
+/etc/init.d/hinlink-modem-hardreset power_on      # 只释放
+/etc/init.d/hinlink-modem-hardreset usb_reset     # 只在 USB 层重新枚举（不碰 pin）
 ```
 
 **③ 直接调核心脚本**（连字符 / 下划线都接受）：
 
 ```sh
-/usr/libexec/hinlink-modem status-json  # JSON，给脚本 / rpcd 消费
-/usr/libexec/hinlink-modem reset
-/usr/libexec/hinlink-modem power-off
-/usr/libexec/hinlink-modem usb-reset
+/usr/libexec/hinlink-modem-hardreset status-json  # JSON，给脚本 / rpcd 消费
+/usr/libexec/hinlink-modem-hardreset reset
+/usr/libexec/hinlink-modem-hardreset power-off
+/usr/libexec/hinlink-modem-hardreset usb-reset
 ```
 
 **④ USB 层复位**：`usbreset <vid>:<pid>`（usbutils 自带），
-或 `hinlink-modem usb-reset`（按 VID 白名单自动找模组）。
+或 `hinlink-modem-hardreset usb-reset`（按 VID 白名单自动找模组）。
 与 pin 复位互补 —— 模组固件卡死时 pin 复位更彻底；
 只是枚举丢了，USB 重枚举就够。
 
@@ -477,7 +477,7 @@ rc.common 会把 `EXTRA_COMMANDS` 的条目当函数名调用，而函数名不�
 `HINLINK_MODEM_BOOT_WAIT`（默认 2 s）。
 
 **开机自动复位一次**（可选）：在 `/etc/rc.local` 的 `exit 0` 之前加一行
-`/etc/init.d/hinlink-modem reset`。
+`/etc/init.d/hinlink-modem-hardreset reset`。
 
 **原理**：`state_store()` → `rfkill_set_block()` → `rfkill_gpio_set_power()`
 → `gpiod_set_value(reset_gpio, 0/1)`。
@@ -493,17 +493,33 @@ block 并停掉相关接口 —— 这正是「复位」应有的语义，`unblo
 * 复位后模组不回来 → 极性可能反了（三个机型族极性不同，见 §4.3），
   用万用表量一下 `block` 前后该脚电平。
 
-#### 日志（2026-10-14 新增）
+#### 日志（2026-10-14 新增，同日改名到 `hinlink-modem-hardreset`）
 
-手动操作、开机检查、以及**模组 USB 插拔**（`/etc/hotplug.d/usb/` 自动捕获）
-都会写进 `/etc/hinlink-modem.log`，同一份内容也进 syslog：
+手动操作、开机检查、以及 **USB / 串口 / 网卡三个层级的上下线**都会被自动捕获，
+写进 `/etc/hinlink-modem-hardreset.log`，同一份内容也进 syslog：
 
 ```sh
-hinlink-modem log            # 最近 100 行
-hinlink-modem log 500        # 最近 500 行
-hinlink-modem log-clear      # 清空（会追加一条「已清空」记录）
+hinlink-modem-hardreset log            # 最近 100 行
+hinlink-modem-hardreset log 500        # 最近 500 行
+hinlink-modem-hardreset log-clear      # 清空（会追加一条「已清空」记录）
 logread | grep hinlink       # syslog 视图
 ```
+
+**三个层级的 hotplug 各记各的**（时间上也不同步）：
+
+| 子系统 | 目录 | 记录 |
+|---|---|---|
+| `usb` | `/etc/hotplug.d/usb/` | `模组上线 / 模组下线`（**设备级**，含 vid:pid、总线设备号） |
+| `tty` | `/etc/hotplug.d/tty/` | `串口上线 / 串口下线`（**逐口**，`/dev/ttyUSB0…3`） |
+| `net` | `/etc/hotplug.d/net/` | `网卡上线 / 网卡下线`（`usb0` / `wwan0`） |
+
+⇒ 一次复位能看到**完整过程**：串口逐个消失 → 网卡消失 → 模组消失
+→（约 20 s）→ 模组回来 → 串口逐个回来 → 网卡回来。
+**「哪个口没回来」一眼可见** —— 只看设备级事件是做不到这一点的。
+
+★ tty 侧**必须**用 `[ -n "$DEVNAME" ]` 过滤：一次插拔会发 3 类事件
+（`ttyUSB0` 的 remove/add、接口级 `DEVNAME=`、`bind`/`unbind`），
+只有带 `DEVNAME` 的才是真正的字符设备节点，否则一个口记 3 遍。
 
 LuCI「网络 → 5G 模组」页面里也有对应日志区（倒序显示，操作后自动刷新）。
 写日志而不是只靠 dmesg 的理由、以及 hotplug 环境变量与 udev 的差异，
@@ -538,7 +554,7 @@ LuCI「网络 → 5G 模组」页面里也有对应日志区（倒序显示，�
 `CONFIG_RFKILL=y` + `CONFIG_RFKILL_GPIO=y`，不依赖上游 rockchip
 `config-6.18` 那两行（那两行虽然也是 `=y`，但属上游、可能被改）。
 
-**双保险**：`hinlink-modem` 的 `start()` 里有 **5 秒重试窗口**
+**双保险**：`hinlink-modem-hardreset` 的 `start()` 里有 **5 秒重试窗口**
 （`sleep 0.5` × 10）；仍然等不到就往 syslog 打警告，并附上
 `dmesg | grep -i rfkill` 的尾部 —— 一眼能区分「DTS 写错」还是「驱动没编」。
 
@@ -547,7 +563,7 @@ LuCI「网络 → 5G 模组」页面里也有对应日志区（倒序显示，�
 | 场景 | 结论 |
 |---|---|
 | probe defer（gpio controller 未就绪） | 不会 —— rockchip gpio 在 `postcore/subsys_initcall` 就绪，早于 rfkill 的 `device_initcall` |
-| rfkill 编号不是 0（可能被别的设备占号） | 不影响 —— `hinlink-modem` 按 `type=wwan` 查找，**不写死** `rfkillN` |
+| rfkill 编号不是 0（可能被别的设备占号） | 不影响 —— `hinlink-modem-hardreset` 按 `type=wwan` 查找，**不写死** `rfkillN` |
 | 系统里有多个 wwan rfkill | 不会 —— 各机型 DTS 只定义 1 个 |
 | `/sys` 未挂载 | 不会 —— preinit 阶段已 mount |
 
@@ -556,7 +572,7 @@ H69K 只有**一路** GPIO，现在它是 `rfkill-gpio` 管的 —— 也就是�
 **模组的「供电使能」也依赖这个驱动成功 probe**。若 DT 写错或驱动缺失，
 模组会连电都没有（原来 regulator `always-on` 是内核保证的）。
 所以 H69K 刷机后第一件事建议先跑
-`/etc/init.d/hinlink-modem status` 确认 `name=rfkill-modem` 在。
+`/etc/init.d/hinlink-modem-hardreset status` 确认 `name=rfkill-modem` 在。
 
 ---
 

@@ -1007,20 +1007,20 @@ manifest 里 `kmod-mt7915e` / `kmod-mt7915-firmware` / `kmod-mt7916-firmware`
 | `rk3528-hinlink-h29k-{v1.3-1.14,v5-1.14,v5-1.49}.dts` | `modem_enable`(regulator) → `rfkill-modem`(rfkill-gpio)；供电保留 `vcc3v3_modem`(regulator) |
 | `rk3568-hinlink-h69k-{3eth,mini}.dts` | 唯一那路 `modem_enable`(regulator) → `rfkill-modem`(rfkill-gpio)，等效**断电重启** |
 | `rk3588-hinlink.dtsi`（H88K v2/v3 + H89K） | `modem_enable`(regulator) → `rfkill-modem`(rfkill-gpio)；供电保留 `vcc3v3_modem` |
-| **新增** `armv8/base-files/etc/init.d/hinlink-modem` | `status` / `reset` / `power-off` / `power-on` |
+| **新增** `armv8/base-files/etc/init.d/hinlink-modem-hardreset` | `status` / `reset` / `power-off` / `power-on` |
 | `tools/integrate.py` | 新增 `[6]`：同步 base-files 下 `init.d`/`hotplug.d`/`uci-defaults`（`board.d` 仍走合并），并强制 0755 |
 
 #### 用法
 
 ```sh
-/etc/init.d/hinlink-modem reset      # 软复位（拉 300ms → 释放 → 等 2s）
-/etc/init.d/hinlink-modem status     # rfkill / regulator / USB 状态
-/etc/init.d/hinlink-modem power-off  # 只拉复位（保持）
+/etc/init.d/hinlink-modem-hardreset reset      # 软复位（拉 300ms → 释放 → 等 2s）
+/etc/init.d/hinlink-modem-hardreset status     # rfkill / regulator / USB 状态
+/etc/init.d/hinlink-modem-hardreset power-off  # 只拉复位（保持）
 ```
 
 时序可用环境变量覆盖：`HINLINK_MODEM_HOLD_MS`（默认 300）、
 `HINLINK_MODEM_BOOT_WAIT`（默认 2）。
-开机自动复位：在 `/etc/rc.local` 的 `exit 0` 前加 `/etc/init.d/hinlink-modem reset`。
+开机自动复位：在 `/etc/rc.local` 的 `exit 0` 前加 `/etc/init.d/hinlink-modem-hardreset reset`。
 
 #### 取舍
 
@@ -1054,17 +1054,20 @@ manifest 里 `kmod-mt7915e` / `kmod-mt7915-firmware` / `kmod-mt7916-firmware`
 
 #### ② LuCI 控制面板：网络 → 5G 模组
 
-全部落在 target base-files（与 hinlink-modem 同一套，不做独立 ipk）：
+全部落在 target base-files（与 hinlink-modem-hardreset 同一套，不做独立 ipk）：
 
 | 路径 | 作用 |
 |---|---|
-| `/usr/libexec/hinlink-modem` | **核心实现**（CLI 与 LuCI 共用）：`status` / `status-json` / `reset` / `power-off` / `power-on` / `usb-reset` |
-| `/etc/init.d/hinlink-modem` | rc.common 薄壳（可 `enable`；`start()` 读 UCI 决定是否自动复位） |
-| `/usr/libexec/rpcd/hinlink-modem` | **rpcd shell 插件**，把上面转成 ubus 方法 |
-| `/etc/config/hinlink-modem` | UCI：`enabled` / `auto_reset` / `hold_ms` / `boot_wait` |
-| `/usr/share/luci/menu.d/luci-app-hinlink-modem.json` | 菜单项（网络 → 5G 模组，order 65） |
-| `/usr/share/rpcd/acl.d/luci-app-hinlink-modem.json` | ACL（`ubus hinlink-modem` 的 read/write） |
-| `/www/luci-static/resources/view/hinlink-modem.js` | 前端视图 |
+| `/usr/libexec/hinlink-modem-hardreset` | **核心实现**（CLI 与 LuCI 共用）：`status` / `status-json` / `reset` / `power-off` / `power-on` / `usb-reset` |
+| `/etc/init.d/hinlink-modem-hardreset` | rc.common 薄壳（可 `enable`；`start()` 读 UCI 决定是否自动复位） |
+| `/usr/libexec/rpcd/hinlink-modem-hardreset` | **rpcd shell 插件**，把上面转成 ubus 方法 |
+| `/etc/config/hinlink-modem-hardreset` | UCI：`enabled` / `auto_reset` / `hold_ms` / `boot_wait` |
+| `/usr/share/luci/menu.d/luci-app-hinlink-modem-hardreset.json` | 菜单项（网络 → 5G 模组，order 65） |
+| `/usr/share/rpcd/acl.d/luci-app-hinlink-modem-hardreset.json` | ACL（`ubus hinlink-modem-hardreset` 的 read/write） |
+| `/www/luci-static/resources/view/hinlink-modem-hardreset.js` | 前端视图 |
+| `/etc/hotplug.d/usb/50-hinlink-modem-hardreset` | USB **设备级**插拔 → 日志（模组上线/下线） |
+| `/etc/hotplug.d/tty/50-hinlink-modem-hardreset` | **串口级**（`/dev/ttyUSB*`）上下线 → 日志，逐口 |
+| `/etc/hotplug.d/net/50-hinlink-modem-hardreset` | **网卡级**（`usb0`/`wwan0`）上下线 → 日志 |
 
 页面三块：
 
@@ -1078,7 +1081,7 @@ manifest 里 `kmod-mt7915e` / `kmod-mt7915-firmware` / `kmod-mt7916-firmware`
 
 `luci-app-h69k-fan` 用的是 `file` + `exec`（授权具体命令行）。
 那种写法对「命令行匹配规则」有版本差异，容易踩坑；
-rpcd 插件的 ACL 只要 `"ubus": { "hinlink-modem": [ "reset", … ] }`，
+rpcd 插件的 ACL 只要 `"ubus": { "hinlink-modem-hardreset": [ "reset", … ] }`，
 与 LuCI 的 `rpc.declare` 天然对应，干净得多。
 
 插件**没用 jshn**（少一层依赖），直接手拼 JSON —— 输出结构简单，
@@ -1101,8 +1104,8 @@ rpcd 插件的 ACL 只要 `"ubus": { "hinlink-modem": [ "reset", … ] }`，
 `EXTRA_COMMANDS` 的条目会被 rc.common 当**函数名**调用，
 而 shell 函数名**不能含 `-`** ⇒ init.d 下的命令名用下划线
 （`power_off` / `power_on` / `usb_reset`）；
-核心脚本 `/usr/libexec/hinlink-modem` 同时接受连字符写法
-（`hinlink-modem power-off`），两种都不会踩空。
+核心脚本 `/usr/libexec/hinlink-modem-hardreset` 同时接受连字符写法
+（`hinlink-modem-hardreset power-off`），两种都不会踩空。
 
 ---
 
@@ -1203,46 +1206,85 @@ DHCP 池不用改：`/etc/config/dhcp` 里 `dhcp.lan` 的 `start=100` / `limit=1
 
 #### 三处写入，一份文件
 
+日志名 = 应用名 = `hinlink-modem-hardreset`
+（2026-10-14 由 `hinlink-modem` 改名而来；旧文件在集成时**自动清理**，见 §4.22）。
+
 | 来源 | 内容 |
 |---|---|
 | 手动操作（CLI / LuCI 按钮） | `reset` / `power-off` / `power-on` / `usb-reset` 的开始与结果 |
-| 开机检查（`/etc/init.d/hinlink-modem`） | rfkill 是否就绪、`auto_reset` 是否触发 |
-| **模组 USB 插拔（hotplug）** | **模组上线 / 下线**（含 `4-1`、vid:pid、总线设备号）、**串口就绪**、**网卡就绪** |
+| 开机检查（`/etc/init.d/hinlink-modem-hardreset`） | rfkill 是否就绪、`auto_reset` 是否触发 |
+| **USB 设备级**（`/etc/hotplug.d/usb/`） | **模组上线 / 下线**（含 `6-1`、vid:pid、总线设备号） |
+| **串口级**（`/etc/hotplug.d/tty/`） | **串口上线 / 下线** —— **逐口**，如 `/dev/ttyUSB0 … ttyUSB3` |
+| **网卡级**（`/etc/hotplug.d/net/`） | **网卡上线 / 下线**（`usb0` / `wwan0` 等 USB 网卡） |
 
-⚠️ **「模组上线」和「串口就绪」是两件事，别混**：
-前者是 USB 设备枚举完成（hotplug 的 `add`），后者是 usb-serial **option
-驱动绑定接口层**之后 `/dev/ttyUSB*` 才生成（dmesg 里的
-`option 4-1:1.0: GSM modem (1-port) converter detected`）。两者**能差好几秒**，
-而用户真正关心的是后者 —— 所以 hotplug 在 `add` 之后会**后台**再等一次串口
-（`hinlink-modem wait-tty`），就绪时补一条。
+⚠️ **三种事件是三件事，时间上也不同步，别混**：
+
+```
+USB 设备级   内核枚举完成                -> 模组上线 / 模组下线
+串口级       usb-serial option 驱动绑定接口层后 /dev/ttyUSB* 出现
+             （dmesg: "option 6-1:1.0: GSM modem (1-port) converter detected"）
+网卡级       cdc_ether / qmi_wwan 注册 netdev -> usb0 / wwan0
+```
+
+**为什么必须分三层记录**：只看设备级，你只知道「USB 在线了」，**不知道
+4 个串口是不是都回来了、网卡有没有起来** —— 而后者才是「模组能不能用」。
+反过来，只看串口，你也看不到模组什么时候掉的。
 
 > hotplug 脚本由 `/sbin/hotplug-call` **顺序**执行，自己 sleep 会拖住同子系统的
 > 其它脚本（如 usb-modeswitch）⇒ 必须后台；用 `start-stop-daemon -b`
 > （= setsid）确保脚本退出后不被带走。**实机验证过后台任务在 procd 路径下存活。**
 
-目的地两处：`logger -t hinlink-modem`（syslog）+ `/etc/hinlink-modem.log`
+#### tty / net 两个 hotplug 的过滤规则（★ 都踩过）
+
+内核**确实**会为 tty 和 net 设备发 uevent（实测），但事件里混着很多噪音：
+
+| 子系统 | 一次复位收到的原始事件 | 只有这条要 |
+|---|---|---|
+| `tty` | `remove DEVNAME=ttyUSB0`（tty 设备）+ `unbind DEVNAME=`（接口）+ `remove DEVNAME=`（接口）… | **DEVNAME 非空** |
+| `net` | `remove/add INTERFACE=usb0`，以及 br-lan / eth0 / wlan0 的增删 | **接口名 `usb*`/`wwan*`/`cdc*` 且 DEVPATH 含 `usb`** |
+
+⇒ **tty 的过滤器就一条**：`[ -n "$DEVNAME" ]`。接口级与 bind/unbind 事件的
+`DEVNAME` 都是空的，只有真正的**字符设备节点**才带它。少了这个过滤，
+一个串口会被记 3 遍。
+
+⇒ **net 必须过滤**，否则 br-lan / eth0 / wlan0 的每次增删都会冲进 5G 日志。
+
+#### 实测时间轴（H69K 实机，2026-10-14，改名后重测）
+
+```
+20:04:15 [INFO] reset: 开始（hold=300ms, boot_wait=2s）
+20:04:15 [INFO] power-off: 已拉复位（模组进入复位 / 断电态）
+20:04:15 [WARN] 串口下线：/dev/ttyUSB0        ← tty hotplug，逐口
+20:04:15 [WARN] 串口下线：/dev/ttyUSB1
+20:04:15 [WARN] 串口下线：/dev/ttyUSB2
+20:04:15 [WARN] 串口下线：/dev/ttyUSB3
+20:04:16 [WARN] 网卡下线：usb0                ← net hotplug
+20:04:16 [INFO] power-on: 已释放复位（模组进入工作态）
+20:04:16 [WARN] 模组下线：2cb7:105（掉线 / 正在被复位）   ← usb hotplug
+20:04:18 [WARN] reset: 完成，耗时 3s，但 2s 内还没看到模组 USB
+20:04:37 [OK]   模组上线：2cb7:105（6-1 总线 006 设备号 006）  ← 21 s 后
+20:04:38 [OK]   串口上线：/dev/ttyUSB0
+20:04:38 [OK]   串口上线：/dev/ttyUSB1
+20:04:38 [OK]   串口上线：/dev/ttyUSB2
+20:04:38 [OK]   串口上线：/dev/ttyUSB3
+20:04:38 [OK]   网卡上线：usb0
+```
+
+⇒ **消失和恢复的全过程都在**，每个串口各自的时刻都能看到。
+设备号 `005 → 006` 也证明是真重新枚举。
+
+> `wait-tty` 现在带 `quiet` 调用：逐口的「串口上线」已由 tty hotplug 记录，
+> 它只在**超时**（60 s 还没等到 `/dev/ttyUSB0`）时才出声告警，避免重复。
+> ★ 注意 `${2:-}` 必须显式传 —— 早期版本漏传导致 quiet 失效、汇总行照旧出现。
+
+#### 目的地两处
+
+`logger -t hinlink-modem-hardreset`（syslog）+ `/etc/hinlink-modem-hardreset.log`
 （持久文件，页面读它）。**为什么不只用 syslog** —— logd 是 64 KB 环形缓冲，
 dnsmasq / netifd 刷得很快，「几分钟前模组掉过」这种记录往往已经滚没了。
 
 文件超过 `log_max_lines`（默认 300）自动轮转（只留最近一半），避免吃满
 overlay；同一份内容也进 syslog，方便远程收集。
-
-#### 实测时间轴（H69K 实机，2026-10-14）
-
-```
-19:39:36 [INFO] reset: 开始（hold=300ms, boot_wait=2s）
-19:39:36 [INFO] power-off: 已拉复位（模组进入复位 / 断电态）
-19:39:37 [WARN] 模组下线：2cb7:105（掉线 / 正在被复位）       ← hotplug 自动
-19:39:37 [INFO] power-on: 已释放复位（模组进入工作态）
-19:39:39 [WARN] reset: 完成，耗时 3s，但 2s 内还没看到模组 USB
-19:40:00 [OK]   模组上线：2cb7:105（6-1 总线 006 设备号 003）  ← 23 s 后
-19:40:01 [OK]   串口就绪：/dev/ttyUSB0 …3（共 4 个，用时 1s）  ← 再 1 s
-19:40:02 [INFO] 模组网络接口就绪：usb0                        ← 再 1 s
-```
-
-⇒「复位后模组多久才回来、串口多久能用」日志自己就回答了：
-**下线 → 上线 23 s → 串口 1 s → 网卡 1 s**（FM160 实测）。
-设备号 `002 → 003` 也证明是真重新枚举。
 
 #### ★ hotplug 脚本的坑：OpenWrt 没有 udev
 
@@ -1262,7 +1304,7 @@ BUSNUM / DEVNUM
 #### LuCI「网络 → 5G 模组」新增日志区
 
 - 同一个页面第 ② 块：`<pre>` 倒序显示（最新在最上）+ 刷新 / 清空
-- 数据来自 ubus `hinlink-modem.log '{"lines":200}'`（rpcd 插件新增方法）
+- 数据来自 ubus `hinlink-modem-hardreset.log '{"lines":200}'`（rpcd 插件新增方法）
 - **操作按钮点完自动刷新日志** —— 正好看到刚触发的那几步
 - 状态区仍 5 秒轮询；日志**不**轮询（否则你正在看就被顶走了）
 
@@ -1271,10 +1313,10 @@ ACL 相应加 `log`（read）/ `log_clear`（write）。
 #### 验证
 
 - 构建机跑后端：`log` / `log-add` / `log-json` 输出经 `jsonfilter` 校验合法
-- 实机 `ubus call hinlink-modem log '{"lines":3}'` 返回正确 JSON（LuCI 真实链路）
+- 实机 `ubus call hinlink-modem-hardreset log '{"lines":3}'` 返回正确 JSON（LuCI 真实链路）
 - hotplug 过滤：手工喂 `DEVTYPE=usb_interface`、以及 `PRODUCT=1d6b/2/600`
   （root hub，非模组）**都不写日志**；只有 `usb_device` + 模组 VID 才写
-- `curl http://<机>/luci-static/resources/view/hinlink-modem.js` = HTTP 200 且与本地一致
+- `curl http://<机>/luci-static/resources/view/hinlink-modem-hardreset.js` = HTTP 200 且与本地一致
 
 #### ⚠️ 日志时间戳依赖系统时钟
 
@@ -1323,7 +1365,7 @@ if (req.expect) {
 
 ```js
 var callLog = rpc.declare({
-	object: 'hinlink-modem',
+	object: 'hinlink-modem-hardreset',
 	method: 'log',
 	params: [ 'lines' ]          /* ← 不写 expect */
 });
@@ -1334,6 +1376,64 @@ var callLog = rpc.declare({
 
 > 对照：`expect: {}`（**空对象**）是安全的 —— `for...in` 不产生任何 key，
 > 什么都不会改。本项目其余方法（`status` / `reset`…）用的都是 `expect: {}`。
+
+---
+
+### 4.21 ★ 2026-10-14 应用整体改名：`hinlink-modem` → `hinlink-modem-hardreset`
+
+用户要求「ipk 名称改成 `hinlink-modem-hardreset`」。
+
+⚠️ **本项目没有独立 ipk** —— 整个应用都落在 target base-files（见 §4.18），
+所以「包名」体现为**一组标识符**。本次把这一整套统一改名（共 124 处引用）：
+
+| 旧 | 新 |
+|---|---|
+| `/etc/config/hinlink-modem` | `/etc/config/hinlink-modem-hardreset` |
+| `/etc/init.d/hinlink-modem` | `/etc/init.d/hinlink-modem-hardreset` |
+| `/usr/libexec/hinlink-modem` | `/usr/libexec/hinlink-modem-hardreset` |
+| `/usr/libexec/rpcd/hinlink-modem`（= **ubus 对象名**） | `/usr/libexec/rpcd/hinlink-modem-hardreset` |
+| `/etc/hotplug.d/usb/50-hinlink-modem` | `…/50-hinlink-modem-hardreset` |
+| `luci-app-hinlink-modem`（menu.d / acl.d） | `luci-app-hinlink-modem-hardreset` |
+| `www/…/view/hinlink-modem.js` | `www/…/view/hinlink-modem-hardreset.js` |
+| **日志** `/etc/hinlink-modem.log` | `/etc/hinlink-modem-hardreset.log` |
+| syslog tag `logger -t hinlink-modem` | `logger -t hinlink-modem-hardreset` |
+
+**连带必须一起改的**（漏掉任何一处都会「改名改一半」）：
+
+- `menu.d` 的 **`path`** 字段 —— 它必须等于 view 文件名，否则页面 404；
+- `acl.d` 的 **`ubus` 对象名**与 **`uci` 段名** —— 与 rpcd 插件文件名、config 段名同源；
+- 前端 JS 的 `object:` / `uci.load()` / `form.Map()` / `NamedSection`；
+- init.d 的 `$MODEM` 路径与 `uci -q get <pkg>.modem.*`；
+- DTS 注释、README / HARDWARE 文档里的命令示例。
+
+**实机迁移**（老固件升级上来的机器）：
+`/etc/config` 是 sysupgrade 保留项，所以旧配置不会自动消失 —— 部署脚本要
+显式 `mv` 旧日志、按旧配置生成新配置，再 `rm` 旧名的 8 个文件 + 旧 `rc.d`
+软链，最后 `/etc/init.d/rpcd restart`（**不重启 rpcd 新 ubus 对象不会出现**）。
+
+实测确认：`ubus list` 只有 `hinlink-modem-hardreset`（旧对象消失）、
+新页面 HTTP 200 / 旧页面 404、`ubus call hinlink-modem-hardreset log` 正常。
+
+---
+
+### 4.22 ★ 2026-10-14 修 `integrate.py` 的「只拷不删」缺陷
+
+§4.21 改名时暴露出来的**真问题**：`tools/integrate.py` 的 `[6]` 只把
+base-files 拷进内核树，**从不删除**已废弃的文件。于是改名后内核树里
+**新旧两套并存**，会一起打进固件 —— 表现为「旧 LuCI 页面/旧 ubus 对象仍在」。
+
+**修法**：`[6]` 增加一步清理 ——
+
+1. 先收集源树里**应有**的相对路径集合；
+2. 遍历目标树，凡是**文件名含 `hinlink` / `hlink`**（只认我方标记，绝不碰官方
+   文件）而源树已没有的，删掉；
+3. 顺手清掉空目录。
+
+实测：一次运行清理掉 8 个旧文件，`phy-leds` / `reload-sdio-wifi` /
+`40-net-smp-affinity` 等官方文件**一个都没动**。
+
+> 教训：**集成脚本必须幂等**。只做「拷贝」的脚本，在源树删文件/改名时会
+> 留下幽灵文件，而且症状很隐蔽（功能「还在」，只是是旧版本）。
 
 ---
 
@@ -1365,9 +1465,20 @@ target/linux/rockchip/
 │   ├── vendor-h29k-v5-1.49.dtb               厂商原始 dtb（H29K 1.49 寸溯源）
 │   └── vendor-h89k.dtb                       厂商原始 dtb（H89K 溯源）
 │
-├── armv8/base-files/etc/board.d/
-│   ├── 02_network                            网口映射（写死，不探测）
-│   └── 01_leds                               LED 定义
+├── armv8/base-files/                         ★ 我方 base-files（integrate.py [6]）
+│   ├── etc/board.d/02_network                网口映射（写死，不探测；合并进官方文件）
+│   ├── etc/board.d/01_leds                   LED 定义（合并进官方文件）
+│   ├── etc/board.d/03_hinlink-lan-ip         默认 LAN 网段 192.168.100.1（见 §4.19）
+│   ├── etc/config/hinlink-modem-hardreset    UCI 配置
+│   ├── etc/init.d/hinlink-modem-hardreset    rc.common 薄壳
+│   ├── etc/hotplug.d/usb/50-hinlink-modem-hardreset   设备级 上线/下线
+│   ├── etc/hotplug.d/tty/50-hinlink-modem-hardreset   串口级 逐口 上线/下线
+│   ├── etc/hotplug.d/net/50-hinlink-modem-hardreset   网卡级 上线/下线
+│   ├── usr/libexec/hinlink-modem-hardreset   核心实现（CLI + LuCI 共用）
+│   ├── usr/libexec/rpcd/hinlink-modem-hardreset        rpcd shell 插件
+│   ├── usr/share/luci/menu.d/luci-app-hinlink-modem-hardreset.json
+│   ├── usr/share/rpcd/acl.d/luci-app-hinlink-modem-hardreset.json
+│   └── www/luci-static/resources/view/hinlink-modem-hardreset.js
 │
 ├── hinlink-config.append                     ★ 追加到 armv8/config-6.18：FB/fbtft 内建段
 │                                             + 13 个 (NEW) 符号（见 §4.12）

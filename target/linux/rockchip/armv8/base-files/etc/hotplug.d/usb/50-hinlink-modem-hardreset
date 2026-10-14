@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# HinLink 5G 模组 USB 插拔 -> 记进 hinlink-modem 日志
+# HinLink 5G 模组 USB 插拔 -> 记进 hinlink-modem-hardreset 日志
 #
 # 只关心「整台设备」（DEVTYPE=usb_device）的出现与消失，不看接口层
 # （4-1:1.0 之类）；否则一次枚举会写好几行重复记录。
@@ -24,7 +24,7 @@
 #   PRODUCT=<vid>/<pid>/<rev>（都是十六进制小写）—— 别照抄 udev 的写法。
 #   可参考 /sys/bus/usb/devices/<dev>/uevent 的内容。
 #
-# ★ VID 白名单要与 /usr/libexec/hinlink-modem 里的 MODEM_VIDS 保持一致。
+# ★ VID 白名单要与 /usr/libexec/hinlink-modem-hardreset 里的 MODEM_VIDS 保持一致。
 
 [ "$DEVTYPE" = "usb_device" ] || exit 0
 case "$ACTION" in add|remove) ;; *) exit 0 ;; esac
@@ -41,20 +41,23 @@ pid="$(printf '%s' "$PRODUCT" | cut -d/ -f2)"
 
 case "$ACTION" in
 	add)
-		/usr/libexec/hinlink-modem log-add OK \
+		/usr/libexec/hinlink-modem-hardreset log-add OK \
 			"模组上线：${vid}:${pid}（${DEVPATH##*/} 总线 ${BUSNUM:-?} 设备号 ${DEVNUM:-?}）"
-		# ★ 后台等串口就绪 —— 见 /usr/libexec/hinlink-modem 里 wait_tty 的注释。
+		# ★ 后台等串口就绪 —— 见 /usr/libexec/hinlink-modem-hardreset 里
+		#   wait_tty 的注释。这里传 `quiet`：逐口的「串口上线」已由
+		#   /etc/hotplug.d/tty/50-hinlink-modem-hardreset 记录，
+		#   本调用只作**兜底**（tty 事件没到 / 驱动没 bind 时才告警）。
 		#   要点：① 本脚本由 /sbin/hotplug-call **顺序**调用，sleep 会拖住
 		#   同子系统的其它脚本（如 usb-modeswitch），所以只能后台；
 		#   ② 用 start-stop-daemon -b（= setsid）确保脚本退出后不被带走。
 		if command -v start-stop-daemon >/dev/null 2>&1; then
-			start-stop-daemon -S -q -b -x /usr/libexec/hinlink-modem -- wait-tty 60
+			start-stop-daemon -S -q -b -x /usr/libexec/hinlink-modem-hardreset -- wait-tty 60 quiet
 		else
-			( /usr/libexec/hinlink-modem wait-tty 60 ) >/dev/null 2>&1 &
+			( /usr/libexec/hinlink-modem-hardreset wait-tty 60 quiet ) >/dev/null 2>&1 &
 		fi
 		;;
 	remove)
-		/usr/libexec/hinlink-modem log-add WARN \
+		/usr/libexec/hinlink-modem-hardreset log-add WARN \
 			"模组下线：${vid}:${pid}（掉线 / 正在被复位）"
 		;;
 esac

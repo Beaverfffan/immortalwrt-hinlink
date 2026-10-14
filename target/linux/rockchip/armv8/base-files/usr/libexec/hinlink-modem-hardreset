@@ -33,25 +33,25 @@
 #
 # ============================ 日志 ============================
 # 两路同时写：
-#   1) logger -t hinlink-modem   -> syslog（64 KB 环形缓冲，会被别的服务刷掉，
+#   1) logger -t hinlink-modem-hardreset   -> syslog（64 KB 环形缓冲，会被别的服务刷掉，
 #                                   但 logread / 远程 syslog 能立刻看到）
-#   2) /etc/hinlink-modem.log    -> 持久文件（本命令默认就是读它）
+#   2) /etc/hinlink-modem-hardreset.log    -> 持久文件（本命令默认就是读它）
 # 用文件而不是只靠 syslog 的原因：dnsmasq / netifd 之类刷得太快，
 # 模组掉线这种「几分钟前发生」的事件在 logread 里常常已经滚没了。
 #
 # 文件超过 log_max_lines 会自动轮转（只留后半），避免吃满 overlay。
 #
-# 时序取 自 UCI（/etc/config/hinlink-modem），环境变量可临时覆盖：
+# 时序取 自 UCI（/etc/config/hinlink-modem-hardreset），环境变量可临时覆盖：
 #   HINLINK_MODEM_HOLD_MS     复位保持时长（默认 300 ms）
 #   HINLINK_MODEM_BOOT_WAIT   释放后等启动（默认 2 s）
-#   HINLINK_MODEM_LOG_FILE    日志文件路径（默认 /etc/hinlink-modem.log）
+#   HINLINK_MODEM_LOG_FILE    日志文件路径（默认 /etc/hinlink-modem-hardreset.log）
 #   HINLINK_MODEM_LOG_MAX     日志最大行数（默认 300）
 #
 
-CFG_SECTION="hinlink-modem.modem"
+CFG_SECTION="hinlink-modem-hardreset.modem"
 
 # 日志默认路径（可被 UCI 的 log_file / 环境变量覆盖，见文件头）
-LOG_FILE_DEFAULT="/etc/hinlink-modem.log"
+LOG_FILE_DEFAULT="/etc/hinlink-modem-hardreset.log"
 
 # ------------------------------------------------------------------ 配置
 
@@ -105,12 +105,12 @@ rfkill_state_path() {
 set_rfkill() {
 	local val="$1" p
 	p="$(rfkill_state_path)" || {
-		echo "hinlink-modem: 没有 type=wwan 的 rfkill 设备" >&2
+		echo "hinlink-modem-hardreset: 没有 type=wwan 的 rfkill 设备" >&2
 		echo "  （该机型 DTS 未定义 rfkill-gpio，或内核没编 CONFIG_RFKILL_GPIO）" >&2
 		return 1
 	}
 	echo "$val" > "$p" 2>/dev/null || {
-		echo "hinlink-modem: 写 $p 失败（需要 root / CAP_NET_ADMIN）" >&2
+		echo "hinlink-modem-hardreset: 写 $p 失败（需要 root / CAP_NET_ADMIN）" >&2
 		return 1
 	}
 	return 0
@@ -142,7 +142,7 @@ mlog() {
 	line="$ts [$lvl] $*"
 
 	# ① syslog：掉电即失，但能立刻被 logread / 远程 syslog 看到
-	logger -t hinlink-modem "$lvl: $*" 2>/dev/null
+	logger -t hinlink-modem-hardreset "$lvl: $*" 2>/dev/null
 
 	# ② 持久文件
 	f="$(log_target)"
@@ -183,7 +183,7 @@ show_log() {
 	echo "（暂无记录 —— 文件 $f 还不存在或为空）"
 	echo "  下面几种情况会写日志："
 	echo "    · 执行 reset / power-off / power-on / usb-reset"
-	echo "    · 开机时 /etc/init.d/hinlink-modem 的检查"
+	echo "    · 开机时 /etc/init.d/hinlink-modem-hardreset 的检查"
 	echo "    · 模组 USB 接入 / 断开（hotplug 自动捕获，无需人工操作）"
 	return 0
 }
@@ -223,18 +223,20 @@ log_clear() {
 
 # ------------------------------------------------------------------ 就绪等待
 
-# wait-tty [秒] —— 等 /dev/ttyUSB* 出现并记一条日志，然后报一下模组的网络接口。
+# wait-tty [秒] [quiet] —— 等 /dev/ttyUSB* 出现；超时则告警。
 #
-# ★ 为什么需要它：hotplug 的 add 事件只说明「USB 设备枚举完成」，
+# ★ 为什么现在还需要它：hotplug 的 tty 子系统事件（/etc/hotplug.d/tty/）
+#   已经能逐口记「串口上线 / 串口下线」，所以正常情况下**不需要**它再来
+#   报一遍「串口就绪」。它剩下的唯一价值是**兜底**：万一 tty 事件没到
+#   （子系统没分发 / 驱动没 bind），60 秒后给一条明确的 WARN。
+#   ⇒ 由 usb hotplug 带 `quiet` 调用：成功时闭嘴，失败时才说话。
+#
+# 机理（为什么「USB 上线」与「串口就绪」是两件事）：
+#   hotplug 的 usb add 事件只说明「USB 设备枚举完成」，
 #   而 /dev/ttyUSB0-3 是 usb-serial **option 驱动绑定接口层**之后才生成的
 #   （见 dmesg 的 "option 4-1:1.0: GSM modem (1-port) converter detected"）。
-#   两者之间隔着几毫秒到几秒，用户真正关心的「什么时候能用」是后者。
-#
-# ★ 为什么由 hotplug **后台**调用：/etc/hotplug.d/ 下的脚本是
-#   /sbin/hotplug-call 顺序执行的，一个脚本 sleep 会把同一子系统的其它
-#   脚本（比如 usb-modeswitch）一起拖住，开机时尤其明显。
 wait_tty() {
-	local timeout="${1:-60}" i=0 t0 tty n net
+	local timeout="${1:-60}" quiet="${2:-}" i=0 t0 tty n
 	case "$timeout" in ''|*[!0-9]*) timeout=60 ;; esac
 	t0="$(date +%s)"
 
@@ -245,15 +247,10 @@ wait_tty() {
 	done
 
 	if [ -e /dev/ttyUSB0 ]; then
+		[ "$quiet" = "quiet" ] && return 0
 		tty="$(ls /dev/ttyUSB* 2>/dev/null | tr '\n' ' ')"
 		n="$(ls /dev/ttyUSB* 2>/dev/null | wc -l)"
 		mlog OK "串口就绪：${tty}（共 ${n} 个，用时 $(( $(date +%s) - t0 ))s）"
-
-		# 顺带报一下模组的网络接口：cdc_ether 的 usb0 / QMI 的 cdc-wdm0
-		net=""
-		[ -d /sys/class/net/usb0 ] && net="usb0"
-		[ -e /dev/cdc-wdm0 ] && net="${net:+$net }cdc-wdm0"
-		[ -n "$net" ] && mlog INFO "模组网络接口就绪：$net"
 	else
 		mlog WARN "串口 ${timeout}s 内未出现（查 usb-serial-option 是否绑定 / 模组是否停在非 AT 模式）"
 	fi
@@ -453,7 +450,7 @@ do_reset() {
 	else
 		mlog WARN "reset: 完成，耗时 $((t1 - t0))s，但 ${BOOT_WAIT}s 内还没看到模组 USB（FM160 实际约需 20s，稍后再看）"
 	fi
-	echo "完成。可用 'hinlink-modem status' 或 'dmesg | grep -i usb' 看枚举。"
+	echo "完成。可用 'hinlink-modem-hardreset status' 或 'dmesg | grep -i usb' 看枚举。"
 }
 
 # ------------------------------------------------------------------ main
@@ -475,7 +472,7 @@ case "$1" in
 	log-json|log_json)    shift; log_json "${1:-100}" ;;
 	log-clear|log_clear)  log_clear ;;
 	log-add|log_add)      shift; log_add "$@" ;;
-	wait-tty|wait_tty)    shift; wait_tty "${1:-60}" ;;
+	wait-tty|wait_tty)    shift; wait_tty "${1:-60}" "${2:-}" ;;
 	"")
 		cat <<EOF
 用法: $0 {status|status-json|reset|power-off|power-on|usb-reset}

@@ -89,7 +89,7 @@
 	 *   · `rfkill-modem`（rfkill-gpio，GPIO4_B4）—— 复位，**可软复位**
 	 *       用户态：echo 0 > /sys/class/rfkill/rfkillN/state   （拉复位）
 	 *               echo 1 > /sys/class/rfkill/rfkillN/state   （释放）
-	 *       已封装成 `/etc/init.d/hinlink-modem reset`。
+	 *       已封装成 `/etc/init.d/hinlink-modem-hardreset reset`。
 	 *
 	 * ★★ 极性：只由 `enable-active-high` 决定，不能凭 GPIO_ACTIVE_LOW 猜 ★★
 	 *   6.18 的 drivers/gpio/gpiolib-of.c 里有一张极性映射表，注释原文：
@@ -132,7 +132,7 @@
 	 *             → gpiod_set_value(reset_gpio, 1)     = 复位释放
 	 *
 	 *   ⇒ 0 → 等一会儿 → 1 就是一次完整的复位脉冲，而且**不需要装
-	 *     rfkill 命令**（纯 sysfs）。已封装成 /etc/init.d/hinlink-modem reset。
+	 *     rfkill 命令**（纯 sysfs）。已封装成 /etc/init.d/hinlink-modem-hardreset reset。
 	 *
 	 * ⚠️ 属性名必须是 `label` + `radio-type`
 	 *   6.18 的 rfkill_gpio_probe() 对 DT 节点读的是：

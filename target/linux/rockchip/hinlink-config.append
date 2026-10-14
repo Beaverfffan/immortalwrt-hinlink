@@ -17,7 +17,7 @@
 #
 # ---- 另：5G 模组软复位依赖 rfkill-gpio 必须**内建** =y ----
 # 复位脚交给 rfkill-gpio（见 docs/HARDWARE.md §四），它必须在**内核启动期**
-# 就 probe 完，这样用户态任何脚本（/etc/init.d/hinlink-modem、/etc/rc.local）
+# 就 probe 完，这样用户态任何脚本（/etc/init.d/hinlink-modem-hardreset、/etc/rc.local）
 # 才都能看到 /sys/class/rfkill/rfkillN/。
 #
 # 时序依据（已对着 6.18 源码逐条核过）：

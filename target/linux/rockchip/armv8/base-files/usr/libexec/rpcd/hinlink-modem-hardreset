@@ -10,11 +10,11 @@
 #   少一层依赖（jshn 要先确认 /usr/bin/jshn 在不在）更稳。
 #   唯一的参数解析（log 的 lines）用 sed 抠整数，够用且零依赖。
 #
-# 实际逻辑全部复用 /usr/libexec/hinlink-modem（CLI 与 LuCI 同一份实现）。
+# 实际逻辑全部复用 /usr/libexec/hinlink-modem-hardreset（CLI 与 LuCI 同一份实现）。
 #
-# 对应 ACL：/usr/share/rpcd/acl.d/luci-app-hinlink-modem.json
+# 对应 ACL：/usr/share/rpcd/acl.d/luci-app-hinlink-modem-hardreset.json
 
-MODEM=/usr/libexec/hinlink-modem
+MODEM=/usr/libexec/hinlink-modem-hardreset
 
 esc() {
 	# JSON 字符串转义：反斜杠、双引号，并去掉控制字符

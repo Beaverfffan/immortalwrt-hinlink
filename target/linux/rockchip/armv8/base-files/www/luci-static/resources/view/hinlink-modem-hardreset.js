@@ -10,14 +10,14 @@
  *     echo 0  -> 拉复位（H69K 上同时就是断电）    echo 1  -> 释放
  * 所以「0 -> 等一会儿 -> 1」就是一次硬复位脉冲。
  *
- * 后端 = /usr/libexec/hinlink-modem；rpcd 插件
- * （/usr/libexec/rpcd/hinlink-modem）把它转发成 ubus 方法：
+ * 后端 = /usr/libexec/hinlink-modem-hardreset；rpcd 插件
+ * （/usr/libexec/rpcd/hinlink-modem-hardreset）把它转发成 ubus 方法：
  *     status / reset / power_off / power_on / usb_reset / log / log_clear
  *
- * 日志由三处写入，都汇总到 /etc/hinlink-modem.log：
+ * 日志由三处写入，都汇总到 /etc/hinlink-modem-hardreset.log：
  *   · 手动操作（本页面的按钮、或 CLI）
- *   · 开机检查（/etc/init.d/hinlink-modem）
- *   · 模组 USB 插拔（/etc/hotplug.d/usb/50-hinlink-modem）
+ *   · 开机检查（/etc/init.d/hinlink-modem-hardreset）
+ *   · 模组 USB 插拔（/etc/hotplug.d/usb/50-hinlink-modem-hardreset）
  *
  * 详见 docs/HARDWARE.md §四。
  */
@@ -32,15 +32,15 @@
 var LOG_LINES = 200;
 
 var callStatus = rpc.declare({
-	object: 'hinlink-modem',
+	object: 'hinlink-modem-hardreset',
 	method: 'status',
 	expect: {}
 });
 
-var callReset    = rpc.declare({ object: 'hinlink-modem', method: 'reset',     expect: {} });
-var callPowerOff = rpc.declare({ object: 'hinlink-modem', method: 'power_off', expect: {} });
-var callPowerOn  = rpc.declare({ object: 'hinlink-modem', method: 'power_on',  expect: {} });
-var callUsbReset = rpc.declare({ object: 'hinlink-modem', method: 'usb_reset', expect: {} });
+var callReset    = rpc.declare({ object: 'hinlink-modem-hardreset', method: 'reset',     expect: {} });
+var callPowerOff = rpc.declare({ object: 'hinlink-modem-hardreset', method: 'power_off', expect: {} });
+var callPowerOn  = rpc.declare({ object: 'hinlink-modem-hardreset', method: 'power_on',  expect: {} });
+var callUsbReset = rpc.declare({ object: 'hinlink-modem-hardreset', method: 'usb_reset', expect: {} });
 
 /*
  * ★ 这里**不能**写 `expect: { entries: [] }`。
@@ -62,12 +62,12 @@ var callUsbReset = rpc.declare({ object: 'hinlink-modem', method: 'usb_reset', e
  *   ⇒ 不写 expect，拿完整对象，字段自己兜底（见 logEntries）。
  */
 var callLog = rpc.declare({
-	object: 'hinlink-modem',
+	object: 'hinlink-modem-hardreset',
 	method: 'log',
 	params: [ 'lines' ]
 });
 
-var callLogClear = rpc.declare({ object: 'hinlink-modem', method: 'log_clear', expect: {} });
+var callLogClear = rpc.declare({ object: 'hinlink-modem-hardreset', method: 'log_clear', expect: {} });
 
 /* 轮询时就地更新的节点 */
 var nodes = {};
@@ -199,7 +199,7 @@ return view.extend({
 		return Promise.all([
 			callStatus(),
 			callLog(LOG_LINES),
-			uci.load('hinlink-modem')
+			uci.load('hinlink-modem-hardreset')
 		]);
 	},
 
@@ -299,10 +299,10 @@ return view.extend({
 		]);
 
 		/* ---------- ③ 配置 ---------- */
-		var m = new form.Map('hinlink-modem', '开机行为',
-			'这些选项在 /etc/init.d/hinlink-modem 的 start() 时生效。');
+		var m = new form.Map('hinlink-modem-hardreset', '开机行为',
+			'这些选项在 /etc/init.d/hinlink-modem-hardreset 的 start() 时生效。');
 
-		var s = m.section(form.NamedSection, 'modem', 'hinlink-modem', '模组');
+		var s = m.section(form.NamedSection, 'modem', 'hinlink-modem-hardreset', '模组');
 		s.anonymous = true;
 		s.addremove = false;
 
@@ -330,7 +330,7 @@ return view.extend({
 		o.default = '2';
 
 		o = s.option(form.Value, 'log_max_lines', '日志保留行数',
-			'超过后自动轮转（只留最近一半）。日志在 /etc/hinlink-modem.log。');
+			'超过后自动轮转（只留最近一半）。日志在 /etc/hinlink-modem-hardreset.log。');
 		o.datatype = 'uinteger';
 		o.placeholder = '300';
 		o.default = '300';

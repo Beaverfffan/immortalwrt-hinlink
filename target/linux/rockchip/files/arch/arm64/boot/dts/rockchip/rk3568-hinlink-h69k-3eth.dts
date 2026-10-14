@@ -251,11 +251,11 @@
 	 *
 	 *   6.18 net/rfkill/core.c 的 `DEVICE_ATTR_RW(state)` 就是入口，
 	 *   **不需要装 rfkill 命令**（纯 sysfs）。已封装为
-	 *   `/etc/init.d/hinlink-modem reset`。
+	 *   `/etc/init.d/hinlink-modem-hardreset reset`。
 	 *
 	 * ★ 唯一代价：丢掉 regulator 的 `startup-delay-us = 2s`
 	 *   （rfkill-gpio 没有延时机制）。这 2 秒本来就是"上电后等模组稳定"，
-	 *   现在由 hinlink-modem 脚本在复位后等待，以及网络层枚举时自然等待。
+	 *   现在由 hinlink-modem-hardreset 脚本在复位后等待，以及网络层枚举时自然等待。
 	 *
 	 * ★ 时序反而更早更简单：rfkill-gpio 在 `device_initcall` 阶段 probe
 	 *   就定好电平；原先 regulator 的 enable 要等到更晚的

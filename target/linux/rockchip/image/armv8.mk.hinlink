@@ -72,8 +72,8 @@ define Device/hinlink_common
   #     此前固件里没有 —— busybox 的 lsusb applet 未启用，直接
   #     `lsusb: not found`；排查 5G 模组 / USB 网卡枚举时很不方便。
   #     ★ usbutils 还带 usbreset（/usr/bin/usbreset），能对单个 USB 设备
-  #       做「重新枚举」级复位，正好与 hinlink-modem 的 **pin 级**复位互补
-  #       （`/etc/init.d/hinlink-modem usb-reset`）。
+  #       做「重新枚举」级复位，正好与 hinlink-modem-hardreset 的 **pin 级**复位互补
+  #       （`/etc/init.d/hinlink-modem-hardreset usb-reset`）。
   #     依赖链（都很小）：+libusb-1.0 +libudev → libudev-zero +usbids
   #     （usbids 提供 /usr/share/usb.ids，没有它 lsusb 只显示 ID、无厂商名）
   DEVICE_PACKAGES += usbutils usbids

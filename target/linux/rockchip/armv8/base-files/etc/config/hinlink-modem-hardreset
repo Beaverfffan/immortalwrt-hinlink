@@ -3,10 +3,10 @@
 # 这个文件由 target base-files 首次安装生成；sysupgrade 会保留它
 # （/etc/config/ 属于保留项），所以升级不会覆盖你的修改。
 #
-# 生效方式：/etc/init.d/hinlink-modem 在 start() 时读取；
+# 生效方式：/etc/init.d/hinlink-modem-hardreset 在 start() 时读取；
 #          LuCI「网络 → 5G 模组」页面保存后自动应用。
 
-config hinlink-modem 'modem'
+config hinlink-modem-hardreset 'modem'
 	# 开机是否执行本服务的 start（0 = 完全不碰模组，只留手动命令）
 	option enabled '1'
 
@@ -25,6 +25,6 @@ config hinlink-modem 'modem'
 	option boot_wait '2'
 
 	# 日志最多保留多少行（超过则轮转成「只留最近一半」）。
-	# 日志文件 /etc/hinlink-modem.log 在 overlay 上，sysupgrade 会保留。
-	# 同时也会写一份到 syslog（logger -t hinlink-modem）。
+	# 日志文件 /etc/hinlink-modem-hardreset.log 在 overlay 上，sysupgrade 会保留。
+	# 同时也会写一份到 syslog（logger -t hinlink-modem-hardreset）。
 	option log_max_lines '300'
