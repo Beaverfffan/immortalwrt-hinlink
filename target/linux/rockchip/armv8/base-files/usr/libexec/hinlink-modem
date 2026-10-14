@@ -221,6 +221,45 @@ log_clear() {
 	return 1
 }
 
+# ------------------------------------------------------------------ 就绪等待
+
+# wait-tty [秒] —— 等 /dev/ttyUSB* 出现并记一条日志，然后报一下模组的网络接口。
+#
+# ★ 为什么需要它：hotplug 的 add 事件只说明「USB 设备枚举完成」，
+#   而 /dev/ttyUSB0-3 是 usb-serial **option 驱动绑定接口层**之后才生成的
+#   （见 dmesg 的 "option 4-1:1.0: GSM modem (1-port) converter detected"）。
+#   两者之间隔着几毫秒到几秒，用户真正关心的「什么时候能用」是后者。
+#
+# ★ 为什么由 hotplug **后台**调用：/etc/hotplug.d/ 下的脚本是
+#   /sbin/hotplug-call 顺序执行的，一个脚本 sleep 会把同一子系统的其它
+#   脚本（比如 usb-modeswitch）一起拖住，开机时尤其明显。
+wait_tty() {
+	local timeout="${1:-60}" i=0 t0 tty n net
+	case "$timeout" in ''|*[!0-9]*) timeout=60 ;; esac
+	t0="$(date +%s)"
+
+	while [ "$i" -lt "$timeout" ]; do
+		[ -e /dev/ttyUSB0 ] && break
+		sleep 1
+		i=$((i + 1))
+	done
+
+	if [ -e /dev/ttyUSB0 ]; then
+		tty="$(ls /dev/ttyUSB* 2>/dev/null | tr '\n' ' ')"
+		n="$(ls /dev/ttyUSB* 2>/dev/null | wc -l)"
+		mlog OK "串口就绪：${tty}（共 ${n} 个，用时 $(( $(date +%s) - t0 ))s）"
+
+		# 顺带报一下模组的网络接口：cdc_ether 的 usb0 / QMI 的 cdc-wdm0
+		net=""
+		[ -d /sys/class/net/usb0 ] && net="usb0"
+		[ -e /dev/cdc-wdm0 ] && net="${net:+$net }cdc-wdm0"
+		[ -n "$net" ] && mlog INFO "模组网络接口就绪：$net"
+	else
+		mlog WARN "串口 ${timeout}s 内未出现（查 usb-serial-option 是否绑定 / 模组是否停在非 AT 模式）"
+	fi
+	return 0
+}
+
 # ------------------------------------------------------------------ USB 侧
 
 # 常见 5G/4G 模组厂家的 USB VID（小写十六进制）
@@ -436,6 +475,7 @@ case "$1" in
 	log-json|log_json)    shift; log_json "${1:-100}" ;;
 	log-clear|log_clear)  log_clear ;;
 	log-add|log_add)      shift; log_add "$@" ;;
+	wait-tty|wait_tty)    shift; wait_tty "${1:-60}" ;;
 	"")
 		cat <<EOF
 用法: $0 {status|status-json|reset|power-off|power-on|usb-reset}
@@ -443,6 +483,7 @@ case "$1" in
       $0 log-json [N]         # 日志 JSON
       $0 log-clear            # 清空日志
       $0 log-add [LEVEL] msg  # 追加一条（LEVEL: INFO|OK|WARN|ERROR）
+      $0 wait-tty [秒]        # 等 /dev/ttyUSB* 出现并记日志（默认 60）
       （power-off / power-on / usb-reset 也接受下划线写法）
 EOF
 		;;

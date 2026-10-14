@@ -1207,7 +1207,18 @@ DHCP 池不用改：`/etc/config/dhcp` 里 `dhcp.lan` 的 `start=100` / `limit=1
 |---|---|
 | 手动操作（CLI / LuCI 按钮） | `reset` / `power-off` / `power-on` / `usb-reset` 的开始与结果 |
 | 开机检查（`/etc/init.d/hinlink-modem`） | rfkill 是否就绪、`auto_reset` 是否触发 |
-| **模组 USB 插拔（hotplug）** | 接入 / 断开，含 vid:pid 与总线设备号 |
+| **模组 USB 插拔（hotplug）** | **模组上线 / 下线**（含 `4-1`、vid:pid、总线设备号）、**串口就绪**、**网卡就绪** |
+
+⚠️ **「模组上线」和「串口就绪」是两件事，别混**：
+前者是 USB 设备枚举完成（hotplug 的 `add`），后者是 usb-serial **option
+驱动绑定接口层**之后 `/dev/ttyUSB*` 才生成（dmesg 里的
+`option 4-1:1.0: GSM modem (1-port) converter detected`）。两者**能差好几秒**，
+而用户真正关心的是后者 —— 所以 hotplug 在 `add` 之后会**后台**再等一次串口
+（`hinlink-modem wait-tty`），就绪时补一条。
+
+> hotplug 脚本由 `/sbin/hotplug-call` **顺序**执行，自己 sleep 会拖住同子系统的
+> 其它脚本（如 usb-modeswitch）⇒ 必须后台；用 `start-stop-daemon -b`
+> （= setsid）确保脚本退出后不被带走。**实机验证过后台任务在 procd 路径下存活。**
 
 目的地两处：`logger -t hinlink-modem`（syslog）+ `/etc/hinlink-modem.log`
 （持久文件，页面读它）。**为什么不只用 syslog** —— logd 是 64 KB 环形缓冲，
@@ -1219,15 +1230,19 @@ overlay；同一份内容也进 syslog，方便远程收集。
 #### 实测时间轴（H69K 实机，2026-10-14）
 
 ```
-10:12:15 [INFO] reset: 开始（hold=300ms, boot_wait=2s）
-10:12:15 [INFO] power-off: 已拉复位（模组进入复位 / 断电态）
-10:12:16 [WARN] USB 断开：2cb7:105（模组掉线 / 正在被复位）   ← hotplug 自动
-10:12:16 [INFO] power-on: 已释放复位（模组进入工作态）
-10:12:18 [WARN] reset: 完成，耗时 3s，但 2s 内还没看到模组 USB
-10:12:42 [OK]   USB 接入：2cb7:105（总线 004 设备号 004）     ← hotplug，24s 后
+19:39:36 [INFO] reset: 开始（hold=300ms, boot_wait=2s）
+19:39:36 [INFO] power-off: 已拉复位（模组进入复位 / 断电态）
+19:39:37 [WARN] 模组下线：2cb7:105（掉线 / 正在被复位）       ← hotplug 自动
+19:39:37 [INFO] power-on: 已释放复位（模组进入工作态）
+19:39:39 [WARN] reset: 完成，耗时 3s，但 2s 内还没看到模组 USB
+19:40:00 [OK]   模组上线：2cb7:105（6-1 总线 006 设备号 003）  ← 23 s 后
+19:40:01 [OK]   串口就绪：/dev/ttyUSB0 …3（共 4 个，用时 1s）  ← 再 1 s
+19:40:02 [INFO] 模组网络接口就绪：usb0                        ← 再 1 s
 ```
 
-⇒「复位后模组多久才回来」这个问题，日志自己就回答了（FM160 实测约 24 s）。
+⇒「复位后模组多久才回来、串口多久能用」日志自己就回答了：
+**下线 → 上线 23 s → 串口 1 s → 网卡 1 s**（FM160 实测）。
+设备号 `002 → 003` 也证明是真重新枚举。
 
 #### ★ hotplug 脚本的坑：OpenWrt 没有 udev
 

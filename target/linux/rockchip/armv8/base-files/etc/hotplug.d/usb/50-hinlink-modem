@@ -8,10 +8,16 @@
 # 为什么用 hotplug，而不是让用户自己去 dmesg 翻：
 #   模组掉线 / 重新枚举往往发生在**没有人点按钮**的时候 —— 供电抖动、
 #   驱动 bind 失败、固件加载失败…，这类事件恰恰是排查时最想看到的。
-#   有了它，「reset 之后多久模组才回来」「半夜模组自己掉了」都能对上时间轴：
+#   有了它，「reset 之后多久模组才回来」能对上时间轴：
 #      14:20:01 [INFO] reset: 开始
-#      14:20:03 [WARN] USB 断开：2cb7:105
-#      14:20:25 [OK]   USB 接入：2cb7:105 总线 4 设备号 3
+#      14:20:03 [WARN] 模组下线：2cb7:105
+#      14:20:25 [OK]   模组上线：2cb7:105
+#      14:20:26 [OK]   串口就绪：/dev/ttyUSB0 …（共 4 个，用时 1s）
+#
+# ★ 两条记录是两件事，别混：
+#   「模组上线」= USB 设备枚举完成（本脚本的 add 事件）；
+#   「串口就绪」= usb-serial **option 驱动绑定接口层**之后 /dev/ttyUSB* 才出现。
+#   两者间隔可达数秒（复位后更明显），所以 add 之后会**后台**再等一次串口。
 #
 # ★ OpenWrt 没有 udev：环境变量里**没有** ID_VENDOR_ID / ID_MODEL /
 #   ID_VENDOR（那些是 udev 的 usb_id 工具补的）。这里只有内核 uevent 给的
@@ -36,11 +42,20 @@ pid="$(printf '%s' "$PRODUCT" | cut -d/ -f2)"
 case "$ACTION" in
 	add)
 		/usr/libexec/hinlink-modem log-add OK \
-			"USB 接入：${vid}:${pid}（总线 ${BUSNUM:-?} 设备号 ${DEVNUM:-?}）"
+			"模组上线：${vid}:${pid}（${DEVPATH##*/} 总线 ${BUSNUM:-?} 设备号 ${DEVNUM:-?}）"
+		# ★ 后台等串口就绪 —— 见 /usr/libexec/hinlink-modem 里 wait_tty 的注释。
+		#   要点：① 本脚本由 /sbin/hotplug-call **顺序**调用，sleep 会拖住
+		#   同子系统的其它脚本（如 usb-modeswitch），所以只能后台；
+		#   ② 用 start-stop-daemon -b（= setsid）确保脚本退出后不被带走。
+		if command -v start-stop-daemon >/dev/null 2>&1; then
+			start-stop-daemon -S -q -b -x /usr/libexec/hinlink-modem -- wait-tty 60
+		else
+			( /usr/libexec/hinlink-modem wait-tty 60 ) >/dev/null 2>&1 &
+		fi
 		;;
 	remove)
 		/usr/libexec/hinlink-modem log-add WARN \
-			"USB 断开：${vid}:${pid}（模组掉线 / 正在被复位）"
+			"模组下线：${vid}:${pid}（掉线 / 正在被复位）"
 		;;
 esac
 
