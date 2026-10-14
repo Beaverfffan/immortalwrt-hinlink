@@ -1052,7 +1052,7 @@ manifest 里 `kmod-mt7915e` / `kmod-mt7915-firmware` / `kmod-mt7916-firmware`
 | `/usr/share/hwdata/usb.ids` | USB ID 库 —— 有它才显示厂商名（如 "Quectel"），注意实际路径是 `hwdata/` 不是 `share/` 根 |
 | **`/usr/bin/usbreset`** | ★ usbutils 自带，对单个 USB 设备做 `USBDEVFS_RESET` —— **正好补上 pin 复位之外的 USB 层复位** |
 
-#### ② LuCI 控制面板：网络 → 5G 模组
+#### ② LuCI 控制面板：网络 → 5G复位
 
 全部落在 target base-files（与 hinlink-modem-hardreset 同一套，不做独立 ipk）：
 
@@ -1062,7 +1062,7 @@ manifest 里 `kmod-mt7915e` / `kmod-mt7915-firmware` / `kmod-mt7916-firmware`
 | `/etc/init.d/hinlink-modem-hardreset` | rc.common 薄壳（可 `enable`；`start()` 读 UCI 决定是否自动复位） |
 | `/usr/libexec/rpcd/hinlink-modem-hardreset` | **rpcd shell 插件**，把上面转成 ubus 方法 |
 | `/etc/config/hinlink-modem-hardreset` | UCI：`enabled` / `auto_reset` / `hold_ms` / `boot_wait` |
-| `/usr/share/luci/menu.d/luci-app-hinlink-modem-hardreset.json` | 菜单项（网络 → 5G 模组，order 65） |
+| `/usr/share/luci/menu.d/luci-app-hinlink-modem-hardreset.json` | 菜单项（网络 → 5G复位，order 65） |
 | `/usr/share/rpcd/acl.d/luci-app-hinlink-modem-hardreset.json` | ACL（`ubus hinlink-modem-hardreset` 的 read/write） |
 | `/www/luci-static/resources/view/hinlink-modem-hardreset.js` | 前端视图 |
 | `/etc/hotplug.d/usb/50-hinlink-modem-hardreset` | USB **设备级**插拔 → 日志（模组上线/下线） |
@@ -1301,7 +1301,7 @@ BUSNUM / DEVNUM
 所以匹配 VID 要从 `PRODUCT` 里切（`cut -d/ -f1`），别照抄 udev 的写法。
 另外**必须用 `DEVTYPE=usb_device` 过滤**，否则一次枚举会按接口写好几行重复。
 
-#### LuCI「网络 → 5G 模组」新增日志区
+#### LuCI「网络 → 5G复位」新增日志区
 
 - 同一个页面第 ② 块：`<pre>` 倒序显示（最新在最上）+ 刷新 / 清空
 - 数据来自 ubus `hinlink-modem-hardreset.log '{"lines":200}'`（rpcd 插件新增方法）
@@ -1413,6 +1413,23 @@ var callLog = rpc.declare({
 
 实测确认：`ubus list` 只有 `hinlink-modem-hardreset`（旧对象消失）、
 新页面 HTTP 200 / 旧页面 404、`ubus call hinlink-modem-hardreset log` 正常。
+
+#### 附带：LuCI 显示名 `5G 模组` → `5G复位`
+
+「应用名」和「显示名」是两件事：
+
+| | 改哪里 | 值 |
+|---|---|---|
+| **应用标识**（文件 / ubus / uci） | 文件名 + 内部引用 | `hinlink-modem-hardreset` |
+| **菜单显示名** | `menu.d` 的 **`title`** 字段 | **`5G复位`** |
+| ACL 描述（`acl.d` 的 `description`） | 同上 | `HinLink 5G复位（模组硬复位 / 状态 / 日志）` |
+
+⇒ 只改显示名**不需要**动目录路径（`admin/network/hinlink-modem-hardreset` 保持），
+用户浏览器里唯一的变化就是菜单文字。改完要清 **LuCI 菜单缓存**
+（`rm -f /tmp/luci-indexcache*`）或重启 uhttpd，否则还是旧字。
+
+> 提醒：LuCI 菜单项的文字来自 `menu.d` 的 `title`，**不是** view 文件名、
+> 也不是 ACL。三者互相独立，别混。
 
 ---
 

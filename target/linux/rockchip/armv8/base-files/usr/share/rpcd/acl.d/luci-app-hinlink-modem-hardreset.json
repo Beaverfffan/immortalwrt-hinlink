@@ -1,6 +1,6 @@
 {
 	"luci-app-hinlink-modem-hardreset": {
-		"description": "HinLink 5G 模组控制（rfkill 软复位 / 状态 / 日志）",
+		"description": "HinLink 5G复位（模组硬复位 / 状态 / 日志）",
 		"read": {
 			"ubus": {
 				"hinlink-modem-hardreset": [ "status", "log" ]

@@ -167,13 +167,16 @@ function row(label, key) {
 	]);
 }
 
-function actionButton(label, fn, kind) {
+function actionButton(label, fn, kind, hint) {
+	/* hint 只作 hover 提示（<button title=>），按钮文字保持短 —— 四个按钮
+	 * 要能排在一行里，长标签（「断电（拉复位）」那种）会换行、显得散。 */
 	return E('button', {
 		'class': 'btn cbi-button ' + (kind || 'cbi-button-action'),
+		'title': hint || label,
 		'click': function(ev) {
 			ev.preventDefault();
 
-			ui.showModal(label, [
+			ui.showModal(hint || label, [
 				E('p', { 'class': 'spinner' }, '执行中，请勿关闭页面…')
 			]);
 
@@ -216,18 +219,37 @@ return view.extend({
 			row('复位时序', 'timing')
 		]);
 
+		/*
+		 * 四个手动动作，**按操作逻辑排**（用户 2026-10-14 反馈「排布有点怪」）：
+		 *
+		 *     断电 → 上电 → 软复位 → 仅 USB 重新枚举
+		 *
+		 * 理由：「软复位」本质就是「断电 + 等 hold_ms + 上电」，
+		 * 是前两个动作的**合成**，放在它们后面才符合直觉；
+		 * 旧顺序把「软复位模组」放最前，读起来像是和后面三个并列的
+		 * 第四种操作，容易误解。
+		 *
+		 * 标签也收短了（原来「断电（拉复位）」「软复位模组」「仅 USB 重枚举」），
+		 * 长标签会换行、把这一组撑散；详细说明移到 hover 的 title 上。
+		 */
 		var actions = E('div', { 'class': 'cbi-page-actions' }, [
-			actionButton('软复位模组', callReset, 'cbi-button-apply'),
-			actionButton('断电（拉复位）', callPowerOff, 'cbi-button-reset'),
-			actionButton('上电（释放复位）', callPowerOn, 'cbi-button-action'),
-			actionButton('仅 USB 重枚举', callUsbReset, 'cbi-button-neutral')
+			actionButton('断电', callPowerOff, 'cbi-button-reset',
+				'断电：只拉复位脚，并保持该状态'),
+			actionButton('上电', callPowerOn, 'cbi-button-action',
+				'上电：只释放复位脚'),
+			actionButton('软复位', callReset, 'cbi-button-apply',
+				'软复位：断电 → 等 hold_ms 毫秒 → 上电'),
+			actionButton('仅 USB 重新枚举', callUsbReset, 'cbi-button-neutral',
+				'仅 USB 重新枚举：不碰复位脚，只让 USB 层重新枚举模组')
 		]);
 
 		var statusSection = E('div', { 'class': 'cbi-section' }, [
 			E('h3', {}, '状态'),
 			statusTable,
 			E('div', { 'class': 'cbi-section-descr' }, [
-				'「软复位」= 拉复位 hold_ms 毫秒 → 释放 → 等 boot_wait 秒。',
+				'手动操作（四个按钮是一组）：',
+				E('code', {}, '断电'), ' → ', E('code', {}, '上电'), ' 两步即一次硬复位；',
+				E('code', {}, '软复位'), ' 把这两步合成一步（断电 → 等 hold_ms → 上电）。',
 				E('br'),
 				'底层等价于：echo 0 > /sys/class/rfkill/rfkillN/state，等一会儿，再 echo 1。'
 			]),

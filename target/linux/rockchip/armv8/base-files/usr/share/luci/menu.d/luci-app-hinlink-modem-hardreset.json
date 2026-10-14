@@ -1,6 +1,6 @@
 {
 	"admin/network/hinlink-modem-hardreset": {
-		"title": "5G 模组",
+		"title": "5G复位",
 		"order": 65,
 		"action": {
 			"type": "view",

@@ -442,7 +442,7 @@ sleep 0.3
 echo 1 > /sys/class/rfkill/rfkill0/state   # 释放 / 上电
 ```
 
-**① LuCI 页面**：**网络 → 5G 模组**
+**① LuCI 页面**：**网络 → 5G复位**
 状态（每 5 秒轮询）+ 四个动作按钮（软复位 / 断电 / 上电 / 仅 USB 重枚举）
 + 开机行为配置（`enabled` / `auto_reset` / `hold_ms` / `boot_wait`）。
 后端是 rpcd 插件 `hinlink-modem-hardreset` → `/usr/libexec/hinlink-modem-hardreset`。
@@ -521,7 +521,7 @@ logread | grep hinlink       # syslog 视图
 （`ttyUSB0` 的 remove/add、接口级 `DEVNAME=`、`bind`/`unbind`），
 只有带 `DEVNAME` 的才是真正的字符设备节点，否则一个口记 3 遍。
 
-LuCI「网络 → 5G 模组」页面里也有对应日志区（倒序显示，操作后自动刷新）。
+LuCI「网络 → 5G复位」页面里也有对应日志区（倒序显示，操作后自动刷新）。
 写日志而不是只靠 dmesg 的理由、以及 hotplug 环境变量与 udev 的差异，
 见 README §4.20。
 
