@@ -31,6 +31,15 @@
 
 var LOG_LINES = 200;
 
+/*
+ * 页面版本标记 —— 印在「状态」区说明末尾。
+ * 存在的唯一理由是**当缓存探针**：uhttpd 对 /luci-static/ 下的静态文件
+ * 只发 ETag + Last-Modified、**不发 Cache-Control**，浏览器一旦按启发式
+ * 缓存住旧 JS，改多少代码都看不见。页面上直接印版本号，
+ * 「看不到 v2」≈「浏览器还在用旧文件」，省得来回猜。
+ */
+var PAGE_VERSION = '前端 v2 · 2026-10-14';
+
 var callStatus = rpc.declare({
 	object: 'hinlink-modem-hardreset',
 	method: 'status',
@@ -169,9 +178,16 @@ function row(label, key) {
 
 function actionButton(label, fn, kind, hint) {
 	/* hint 只作 hover 提示（<button title=>），按钮文字保持短 —— 四个按钮
-	 * 要能排在一行里，长标签（「断电（拉复位）」那种）会换行、显得散。 */
+	 * 要能排在一行里，长标签（「断电（拉复位）」那种）会换行、显得散。
+	 *
+	 * style 里那两个声明是**必须**的，机理见下面 actions 处的长注释：
+	 * 主题 cascade.css 会给 .cbi-page-actions 的一部分子元素加 float，
+	 * 内联 float:none 用来把这层干扰压掉（内联优先级高于任何类选择器）。
+	 * margin-right:0 则是压掉那条规则自带的 margin-right:.4em，
+	 * 让间距统一交给容器的 gap 管，四个按钮才是等距的。 */
 	return E('button', {
 		'class': 'btn cbi-button ' + (kind || 'cbi-button-action'),
+		'style': 'float:none;margin-right:0',
 		'title': hint || label,
 		'click': function(ev) {
 			ev.preventDefault();
@@ -220,19 +236,43 @@ return view.extend({
 		]);
 
 		/*
-		 * 四个手动动作，**按操作逻辑排**（用户 2026-10-14 反馈「排布有点怪」）：
+		 * 四个手动动作，**按操作逻辑排**：
 		 *
 		 *     断电 → 上电 → 软复位 → 仅 USB 重新枚举
 		 *
 		 * 理由：「软复位」本质就是「断电 + 等 hold_ms + 上电」，
 		 * 是前两个动作的**合成**，放在它们后面才符合直觉；
-		 * 旧顺序把「软复位模组」放最前，读起来像是和后面三个并列的
+		 * 旧顺序把「软复位」放最前，读起来像是和后面三个并列的
 		 * 第四种操作，容易误解。
 		 *
-		 * 标签也收短了（原来「断电（拉复位）」「软复位模组」「仅 USB 重枚举」），
-		 * 长标签会换行、把这一组撑散；详细说明移到 hover 的 title 上。
+		 * ★★ 为什么必须写 style="display:flex …"（2026-10-14 实证，别再删）★
+		 *
+		 * 上一版只调了 DOM 顺序，用户两次反馈「还是左两个右两个 / 排序没成功」。
+		 * 真正原因是主题 /www/luci-static/bootstrap/cascade.css 里这一条：
+		 *
+		 *   .cbi-page-actions > :not([method="post"]):not(.cbi-button-apply):
+		 *     not(.cbi-button-negative):not(.cbi-button-save):not(.cbi-button-reset)
+		 *       { float: left; margin-right: .4em }
+		 *
+		 * 读法：**除 apply / negative / save / reset 之外的直接子元素，一律
+		 * float:left**。我们的四个按钮正好被劈成两半 ——
+		 *   · 「断电」(cbi-button-reset)  「软复位」(cbi-button-apply)
+		 *        → 被 :not() 排除 ⇒ 不受这条规则管，留在行内流里；
+		 *   · 「上电」(cbi-button-action)「仅 USB」(cbi-button-neutral)
+		 *        → 命中规则 ⇒ 被 float:left 抽到行首。
+		 * 于是浮动的两个占住左边、留在流里的两个被挤到右边，
+		 * **DOM 顺序怎么改都还是「左两个右两个」** —— 与 CSS 是否居中/右对齐无关。
+		 *
+		 * 解法：让这个 div 成为 flex 容器。CSS 规范里 float 对 flex item 的
+		 * 计算值恒为 none（float 只影响 in-flow 块级盒子），这一条规则被整条废掉；
+		 * 子项随即严格按 DOM 顺序从左边依次排列，间距改由 gap 统一给。
+		 * 按钮上的内联 float:none 是双保险（万一某主题把容器的 display 也覆盖掉）。
 		 */
-		var actions = E('div', { 'class': 'cbi-page-actions' }, [
+		var actions = E('div', {
+			'class': 'cbi-page-actions',
+			'style': 'display:flex;flex-wrap:wrap;align-items:center;'
+				+ 'justify-content:flex-start;gap:.5em'
+		}, [
 			actionButton('断电', callPowerOff, 'cbi-button-reset',
 				'断电：只拉复位脚，并保持该状态'),
 			actionButton('上电', callPowerOn, 'cbi-button-action',
@@ -247,11 +287,13 @@ return view.extend({
 			E('h3', {}, '状态'),
 			statusTable,
 			E('div', { 'class': 'cbi-section-descr' }, [
-				'手动操作（四个按钮是一组）：',
+				'手动操作（四个按钮是一组，按操作顺序从左到右）：',
 				E('code', {}, '断电'), ' → ', E('code', {}, '上电'), ' 两步即一次硬复位；',
 				E('code', {}, '软复位'), ' 把这两步合成一步（断电 → 等 hold_ms → 上电）。',
 				E('br'),
-				'底层等价于：echo 0 > /sys/class/rfkill/rfkillN/state，等一会儿，再 echo 1。'
+				'底层等价于：echo 0 > /sys/class/rfkill/rfkillN/state，等一会儿，再 echo 1。',
+				E('br'),
+				E('em', {}, PAGE_VERSION)
 			]),
 			actions
 		]);
