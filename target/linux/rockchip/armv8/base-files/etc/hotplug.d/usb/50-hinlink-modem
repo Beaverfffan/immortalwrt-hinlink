@@ -1,0 +1,47 @@
+#!/bin/sh
+#
+# HinLink 5G 模组 USB 插拔 -> 记进 hinlink-modem 日志
+#
+# 只关心「整台设备」（DEVTYPE=usb_device）的出现与消失，不看接口层
+# （4-1:1.0 之类）；否则一次枚举会写好几行重复记录。
+#
+# 为什么用 hotplug，而不是让用户自己去 dmesg 翻：
+#   模组掉线 / 重新枚举往往发生在**没有人点按钮**的时候 —— 供电抖动、
+#   驱动 bind 失败、固件加载失败…，这类事件恰恰是排查时最想看到的。
+#   有了它，「reset 之后多久模组才回来」「半夜模组自己掉了」都能对上时间轴：
+#      14:20:01 [INFO] reset: 开始
+#      14:20:03 [WARN] USB 断开：2cb7:105
+#      14:20:25 [OK]   USB 接入：2cb7:105 总线 4 设备号 3
+#
+# ★ OpenWrt 没有 udev：环境变量里**没有** ID_VENDOR_ID / ID_MODEL /
+#   ID_VENDOR（那些是 udev 的 usb_id 工具补的）。这里只有内核 uevent 给的
+#   PRODUCT=<vid>/<pid>/<rev>（都是十六进制小写）—— 别照抄 udev 的写法。
+#   可参考 /sys/bus/usb/devices/<dev>/uevent 的内容。
+#
+# ★ VID 白名单要与 /usr/libexec/hinlink-modem 里的 MODEM_VIDS 保持一致。
+
+[ "$DEVTYPE" = "usb_device" ] || exit 0
+case "$ACTION" in add|remove) ;; *) exit 0 ;; esac
+[ -n "$PRODUCT" ] || exit 0
+
+vid="$(printf '%s' "$PRODUCT" | cut -d/ -f1 | tr 'A-Z' 'a-z')"
+
+case "$vid" in
+	2c7c|2cb7|2dee|0e8d|05c6|19d2|12d1|1bc7|0408|413c|0bdb|1199|03f0) ;;
+	*) exit 0 ;;
+esac
+
+pid="$(printf '%s' "$PRODUCT" | cut -d/ -f2)"
+
+case "$ACTION" in
+	add)
+		/usr/libexec/hinlink-modem log-add OK \
+			"USB 接入：${vid}:${pid}（总线 ${BUSNUM:-?} 设备号 ${DEVNUM:-?}）"
+		;;
+	remove)
+		/usr/libexec/hinlink-modem log-add WARN \
+			"USB 断开：${vid}:${pid}（模组掉线 / 正在被复位）"
+		;;
+esac
+
+exit 0

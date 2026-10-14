@@ -26,12 +26,32 @@
 #   power-on      只释放 / 上电
 #   usb-reset     只在 USB 层重新枚举模组（不做 pin 复位）
 #
-# 时序取自 UCI（/etc/config/hinlink-modem），环境变量可临时覆盖：
-#   HINLINK_MODEM_HOLD_MS    复位保持时长（默认 300 ms）
-#   HINLINK_MODEM_BOOT_WAIT  释放后等启动（默认 2 s）
+#   log [N]       打印最近 N 行日志（默认 100）
+#   log-json [N]  日志 JSON（rpcd / LuCI 用）
+#   log-clear     清空日志文件
+#   log-add L msg 追加一条（L = INFO|OK|WARN|ERROR；供 hotplug / init.d 复用）
+#
+# ============================ 日志 ============================
+# 两路同时写：
+#   1) logger -t hinlink-modem   -> syslog（64 KB 环形缓冲，会被别的服务刷掉，
+#                                   但 logread / 远程 syslog 能立刻看到）
+#   2) /etc/hinlink-modem.log    -> 持久文件（本命令默认就是读它）
+# 用文件而不是只靠 syslog 的原因：dnsmasq / netifd 之类刷得太快，
+# 模组掉线这种「几分钟前发生」的事件在 logread 里常常已经滚没了。
+#
+# 文件超过 log_max_lines 会自动轮转（只留后半），避免吃满 overlay。
+#
+# 时序取 自 UCI（/etc/config/hinlink-modem），环境变量可临时覆盖：
+#   HINLINK_MODEM_HOLD_MS     复位保持时长（默认 300 ms）
+#   HINLINK_MODEM_BOOT_WAIT   释放后等启动（默认 2 s）
+#   HINLINK_MODEM_LOG_FILE    日志文件路径（默认 /etc/hinlink-modem.log）
+#   HINLINK_MODEM_LOG_MAX     日志最大行数（默认 300）
 #
 
 CFG_SECTION="hinlink-modem.modem"
+
+# 日志默认路径（可被 UCI 的 log_file / 环境变量覆盖，见文件头）
+LOG_FILE_DEFAULT="/etc/hinlink-modem.log"
 
 # ------------------------------------------------------------------ 配置
 
@@ -51,6 +71,12 @@ load_cfg() {
 	BOOT_WAIT="$(cfg_get boot_wait 2 HINLINK_MODEM_BOOT_WAIT)"
 	case "$HOLD_MS" in ''|*[!0-9]*) HOLD_MS=300 ;; esac
 	case "$BOOT_WAIT" in ''|*[!0-9]*) BOOT_WAIT=2 ;; esac
+
+	LOG_FILE="$(cfg_get log_file '' HINLINK_MODEM_LOG_FILE)"
+	[ -n "$LOG_FILE" ] || LOG_FILE="$LOG_FILE_DEFAULT"
+	LOG_MAX="$(cfg_get log_max_lines 300 HINLINK_MODEM_LOG_MAX)"
+	case "$LOG_MAX" in ''|*[!0-9]*) LOG_MAX=300 ;; esac
+	[ "$LOG_MAX" -ge 20 ] || LOG_MAX=20
 }
 
 # ------------------------------------------------------------------ helper
@@ -98,6 +124,103 @@ msleep() {
 	fi
 }
 
+# ------------------------------------------------------------------ 日志
+
+log_target() {
+	printf '%s' "${LOG_FILE:-$LOG_FILE_DEFAULT}"
+}
+
+# mlog <LEVEL> <msg...>
+#   LEVEL 只是显示用（INFO / OK / WARN / ERROR），不做过滤。
+#   写 syslog + 持久文件；文件超限则轮转（只留后半）。
+mlog() {
+	local lvl="$1"; shift
+	local ts line f n
+	[ -n "$*" ] || return 0
+
+	ts="$(date '+%Y-%m-%d %H:%M:%S')"
+	line="$ts [$lvl] $*"
+
+	# ① syslog：掉电即失，但能立刻被 logread / 远程 syslog 看到
+	logger -t hinlink-modem "$lvl: $*" 2>/dev/null
+
+	# ② 持久文件
+	f="$(log_target)"
+	case "$f" in ''|/) return 0 ;; esac
+	[ -d "$(dirname "$f")" ] || return 0
+	printf '%s\n' "$line" >> "$f" 2>/dev/null || return 0
+
+	# 轮转
+	case "${LOG_MAX:-300}" in ''|*[!0-9]*) LOG_MAX=300 ;; esac
+	n="$(wc -l < "$f" 2>/dev/null)"
+	case "$n" in ''|*[!0-9]*) return 0 ;; esac
+	if [ "$n" -gt "$LOG_MAX" ]; then
+		tail -n "$(( LOG_MAX / 2 ))" "$f" > "$f.tmp" 2>/dev/null \
+			&& mv "$f.tmp" "$f" 2>/dev/null
+		printf '%s [INFO] 日志超过 %s 行，已轮转（只保留最近 %s 行）\n' \
+			"$ts" "$LOG_MAX" "$(( LOG_MAX / 2 ))" >> "$f" 2>/dev/null
+	fi
+	return 0
+}
+
+# 供 hotplug / init.d 追加一条：log-add [LEVEL] <msg...>
+log_add() {
+	local lvl=INFO
+	case "$1" in
+		INFO|OK|WARN|ERROR) lvl="$1"; shift ;;
+	esac
+	mlog "$lvl" "$*"
+}
+
+show_log() {
+	local n="${1:-100}" f
+	case "$n" in ''|*[!0-9]*) n=100 ;; esac
+	f="$(log_target)"
+	if [ -s "$f" ]; then
+		tail -n "$n" "$f"
+		return 0
+	fi
+	echo "（暂无记录 —— 文件 $f 还不存在或为空）"
+	echo "  下面几种情况会写日志："
+	echo "    · 执行 reset / power-off / power-on / usb-reset"
+	echo "    · 开机时 /etc/init.d/hinlink-modem 的检查"
+	echo "    · 模组 USB 接入 / 断开（hotplug 自动捕获，无需人工操作）"
+	return 0
+}
+
+log_json() {
+	local n="${1:-100}" f total first=1 line
+	case "$n" in ''|*[!0-9]*) n=100 ;; esac
+	f="$(log_target)"
+	total=0
+	[ -s "$f" ] && total="$(wc -l < "$f" 2>/dev/null)"
+	case "$total" in ''|*[!0-9]*) total=0 ;; esac
+
+	printf '{"total":%s,"showing":%s,"max_lines":%s,"file":"%s","entries":[' \
+		"$total" "$n" "${LOG_MAX:-300}" "$(json_escape "$f")"
+
+	if [ -s "$f" ]; then
+		# 逐行转义；`first` 与 printf 同在管道子 shell 里，逻辑自洽
+		tail -n "$n" "$f" | while IFS= read -r line; do
+			if [ "$first" = 1 ]; then first=0; else printf ','; fi
+			printf '"%s"' "$(json_escape "$line")"
+		done
+	fi
+	printf ']}\n'
+}
+
+log_clear() {
+	local f
+	f="$(log_target)"
+	if : > "$f" 2>/dev/null; then
+		mlog INFO "日志已由用户清空"
+		echo "已清空 $f"
+		return 0
+	fi
+	echo "清空 $f 失败" >&2
+	return 1
+}
+
 # ------------------------------------------------------------------ USB 侧
 
 # 常见 5G/4G 模组厂家的 USB VID（小写十六进制）
@@ -117,36 +240,46 @@ find_modem_usb() {
 }
 
 usb_reset() {
-	local d name vid pid n=0
+	local d name vid pid
 	d="$(find_modem_usb)" || {
 		echo "USB 侧：未找到常见模组的 USB 设备（VID 白名单）"
+		mlog WARN "usb-reset: 未找到模组 USB 设备（不在 VID 白名单？）"
 		return 1
 	}
 	name="${d##*/}"
 	vid="$(cat "$d/idVendor" 2>/dev/null)"
 	pid="$(cat "$d/idProduct" 2>/dev/null)"
 	echo "USB 侧：重新枚举 $name ($vid:$pid)"
+	mlog INFO "usb-reset: 目标 $name ($vid:$pid)"
 
 	# 优先用 usbutils 带的 usbreset（USBDEVFS_RESET ioctl，真正 reset 端口）
 	if command -v usbreset >/dev/null 2>&1; then
 		if usbreset "$vid:$pid" >/dev/null 2>&1; then
 			echo "  usbreset $vid:$pid 成功"
+			mlog OK "usb-reset: usbreset $vid:$pid 成功"
 			return 0
 		fi
 		echo "  usbreset 失败，退回 authorized 开关"
+		mlog WARN "usb-reset: usbreset 失败，改用 authorized 开关"
 	fi
 
 	# 退回：authorized 0 -> 1（让内核重新枚举该设备）
 	if [ -w "$d/authorized" ]; then
 		echo 0 > "$d/authorized" 2>/dev/null || {
-			echo "  写 $d/authorized 失败" >&2; return 1; }
+			echo "  写 $d/authorized 失败" >&2
+			mlog ERROR "usb-reset: 写 $d/authorized=0 失败"
+			return 1; }
 		sleep 1
 		echo 1 > "$d/authorized" 2>/dev/null || {
-			echo "  写 $d/authorized（恢复）失败" >&2; return 1; }
+			echo "  写 $d/authorized（恢复）失败" >&2
+			mlog ERROR "usb-reset: 写 authorized=1 失败（设备可能停在未授权状态！）"
+			return 1; }
 		echo "  authorized 0 -> 1 完成"
+		mlog OK "usb-reset: authorized 0 -> 1 完成"
 		return 0
 	fi
 	echo "  该设备没有 authorized 节点，无法 USB 复位" >&2
+	mlog ERROR "usb-reset: 设备无 authorized 节点，无法复位"
 	return 1
 }
 
@@ -243,21 +376,44 @@ status() {
 
 power_off() {
 	echo "拉复位 / 断电 ..."
-	set_rfkill 0
+	if set_rfkill 0; then
+		mlog INFO "power-off: 已拉复位（模组进入复位 / 断电态）"
+		return 0
+	fi
+	mlog ERROR "power-off: 写 rfkill state 失败"
+	return 1
 }
 
 power_on() {
 	echo "释放复位 / 上电 ..."
-	set_rfkill 1
+	if set_rfkill 1; then
+		mlog INFO "power-on: 已释放复位（模组进入工作态）"
+		return 0
+	fi
+	mlog ERROR "power-on: 写 rfkill state 失败"
+	return 1
 }
 
 do_reset() {
 	load_cfg
 	echo "== 软复位 5G 模组（保持 ${HOLD_MS}ms，释放后等 ${BOOT_WAIT}s）=="
-	power_off || return 1
+	mlog INFO "reset: 开始（hold=${HOLD_MS}ms, boot_wait=${BOOT_WAIT}s）"
+
+	local t0 t1 ud
+	t0="$(date +%s)"
+
+	power_off || { mlog ERROR "reset: 拉复位失败，已中止"; return 1; }
 	msleep "$HOLD_MS"
-	power_on || return 1
+	power_on  || { mlog ERROR "reset: 释放复位失败，已中止"; return 1; }
 	sleep "$BOOT_WAIT"
+
+	t1="$(date +%s)"
+	ud="$(find_modem_usb)" || ud=""
+	if [ -n "$ud" ]; then
+		mlog OK "reset: 完成，耗时 $((t1 - t0))s，模组 USB 已重新枚举（设备 ${ud##*/}）"
+	else
+		mlog WARN "reset: 完成，耗时 $((t1 - t0))s，但 ${BOOT_WAIT}s 内还没看到模组 USB（FM160 实际约需 20s，稍后再看）"
+	fi
 	echo "完成。可用 'hinlink-modem status' 或 'dmesg | grep -i usb' 看枚举。"
 }
 
@@ -276,9 +432,17 @@ case "$1" in
 	power-off|power_off)  power_off ;;
 	power-on|power_on)    power_on ;;
 	usb-reset|usb_reset)  usb_reset ;;
+	log)                  shift; show_log "${1:-100}" ;;
+	log-json|log_json)    shift; log_json "${1:-100}" ;;
+	log-clear|log_clear)  log_clear ;;
+	log-add|log_add)      shift; log_add "$@" ;;
 	"")
 		cat <<EOF
 用法: $0 {status|status-json|reset|power-off|power-on|usb-reset}
+      $0 log [N]              # 最近 N 行日志（默认 100）
+      $0 log-json [N]         # 日志 JSON
+      $0 log-clear            # 清空日志
+      $0 log-add [LEVEL] msg  # 追加一条（LEVEL: INFO|OK|WARN|ERROR）
       （power-off / power-on / usb-reset 也接受下划线写法）
 EOF
 		;;

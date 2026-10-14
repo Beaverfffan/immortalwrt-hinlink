@@ -1106,6 +1106,169 @@ rpcd 插件的 ACL 只要 `"ubus": { "hinlink-modem": [ "reset", … ] }`，
 
 ---
 
+### 4.19 ★ 2026-10-14 出厂默认 LAN 网段改为 192.168.100.1
+
+用户要求「默认 dhcp 改到 192.168.100.1」。**没有**用 uci-defaults 之类
+「启动后再改」的脚本，而是让默认值**天生就是**目标网段。
+
+#### 机理：config_generate 从 board.d 的 JSON 里读 ipaddr
+
+`/bin/config_generate` 的 `generate_network()`：
+
+```sh
+	json_select network
+		json_select "$1"
+			json_get_vars device macaddr metric protocol ipaddr netmask vlan
+	...
+		case "$protocol" in
+		static)
+			case "$1" in
+				lan) ipad=${ipaddr:-"192.168.1.1"} ;;          # ← 关键
+				*) ipad=${ipaddr:-"192.168.$((addr_offset++)).1"} ;;
+			esac
+			netm=${netmask:-"255.255.255.0"}
+```
+
+⇒ board.d 的 JSON 里给了 `ipaddr` 就用它，没给才落到上游默认。
+官方先例（同样写法）：
+
+```
+target/linux/qoriq/base-files/etc/board.d/02_network:14
+	ucidef_set_interface "$device" device "$device" protocol static \
+	                      ipaddr "10.0.${offset}.1" netmask 255.255.255.0
+```
+
+#### 为什么新开一个 board.d 脚本，而不是在 02_network 里加 12 行
+
+`/bin/board_detect` 是按 `for a in $(ls /etc/board.d/*)` **逐个脚本**执行的：
+
+```sh
+	for a in $(ls /etc/board.d/*); do
+		[ -s "$a" ] || continue
+		(. "$a")
+	done
+```
+
+每个脚本在**子 shell** 里跑，且都是
+`board_config_update`（`json_load` 读入当前 CFG）→ 修改 → `board_config_flush`
+（`json_dump -o` 写回）**同一个临时文件** ⇒ 这就是 OpenWrt board.d 的累加机制。
+
+⇒ 新增 `03_hinlink-lan-ip`（字典序正好排在 `02_network` 之后），
+只往它已经建好的 `network.lan` 对象里补两个字段，**02_network 的 12 个分支
+一行都不用改**：
+
+```sh
+case "$(board_name)" in
+	hinlink,*|hlink,*|linkstar,*)
+		ucidef_set_interface "lan" ipaddr '192.168.100.1' netmask '255.255.255.0'
+		;;
+esac
+```
+
+**只匹配 HinLink 前缀** ⇒ 官方其它 rockchip 机型（radxa / friendlyarm…）
+保持上游 192.168.1.1，不会被这批改动波及。
+
+#### 离线验证（不用实机）
+
+`board_detect` 的循环可以在构建机上用 host 版 jshn 复现
+（`staging_dir/host/bin/jshn` + `share/libubox/jshn.sh`）：把脚本里的绝对
+source 路径 sed 到临时树，再按 `01 → 02 → 03 → 05` 顺序跑一遍，读最终 JSON：
+
+| board_name | `network.lan` |
+|---|---|
+| `hinlink,opc-h69k` | `ipaddr 192.168.100.1` / `netmask 255.255.255.0` ✅ |
+| `hinlink,opc-h68k-c-d-f` | 同上 ✅ |
+| `hinlink,h28k` / `hlink,ht2` / `hinlink,opc-h89k` | 同上 ✅ |
+| **`radxa,rock-3a`（官方机型）** | **无 ipaddr** ⇒ 保持 192.168.1.1 ✅ |
+
+（`wan` 对象没有被碰。）
+
+#### 升级不会覆盖用户改过的 IP
+
+`board_detect` 只在 `/etc/board-base.json` **不存在**时才遍历 board.d，
+而它在 overlay 上 ⇒ sysupgrade 保留配置时本脚本不会重跑。
+**反过来说**：已经跑过旧固件（LAN = 192.168.1.1）的机器，保留配置刷这版
+**不会**自动变成 100.1 —— 想恢复出厂网段要「不保留配置」刷机。
+
+DHCP 池不用改：`/etc/config/dhcp` 里 `dhcp.lan` 的 `start=100` / `limit=150`
+是**主机位偏移**，会自动跟着网段走（⇒ 192.168.100.100 ~ 249）。
+
+以后想换网段：只改 `03_hinlink-lan-ip` 里的 `hinlink_lan_ip` 一行。
+
+---
+
+### 4.20 ★ 2026-10-14 5G 模组日志（hotplug 自动记录 + LuCI 日志区）
+
+用户要求「为其制作一个记录日志页面」。
+
+#### 三处写入，一份文件
+
+| 来源 | 内容 |
+|---|---|
+| 手动操作（CLI / LuCI 按钮） | `reset` / `power-off` / `power-on` / `usb-reset` 的开始与结果 |
+| 开机检查（`/etc/init.d/hinlink-modem`） | rfkill 是否就绪、`auto_reset` 是否触发 |
+| **模组 USB 插拔（hotplug）** | 接入 / 断开，含 vid:pid 与总线设备号 |
+
+目的地两处：`logger -t hinlink-modem`（syslog）+ `/etc/hinlink-modem.log`
+（持久文件，页面读它）。**为什么不只用 syslog** —— logd 是 64 KB 环形缓冲，
+dnsmasq / netifd 刷得很快，「几分钟前模组掉过」这种记录往往已经滚没了。
+
+文件超过 `log_max_lines`（默认 300）自动轮转（只留最近一半），避免吃满
+overlay；同一份内容也进 syslog，方便远程收集。
+
+#### 实测时间轴（H69K 实机，2026-10-14）
+
+```
+10:12:15 [INFO] reset: 开始（hold=300ms, boot_wait=2s）
+10:12:15 [INFO] power-off: 已拉复位（模组进入复位 / 断电态）
+10:12:16 [WARN] USB 断开：2cb7:105（模组掉线 / 正在被复位）   ← hotplug 自动
+10:12:16 [INFO] power-on: 已释放复位（模组进入工作态）
+10:12:18 [WARN] reset: 完成，耗时 3s，但 2s 内还没看到模组 USB
+10:12:42 [OK]   USB 接入：2cb7:105（总线 004 设备号 004）     ← hotplug，24s 后
+```
+
+⇒「复位后模组多久才回来」这个问题，日志自己就回答了（FM160 实测约 24 s）。
+
+#### ★ hotplug 脚本的坑：OpenWrt 没有 udev
+
+`/etc/hotplug.d/usb/` 里**没有** `ID_VENDOR_ID` / `ID_MODEL` / `ID_VENDOR`
+（那些是 udev 的 `usb_id` 工具补的）。环境里只有内核 uevent 给的：
+
+```
+PRODUCT=<vid>/<pid>/<rev>     # 均十六进制，如 2cb7/105/100
+DEVTYPE=usb_device            # 整台设备；接口层是 usb_interface
+ACTION=add|remove
+BUSNUM / DEVNUM
+```
+
+所以匹配 VID 要从 `PRODUCT` 里切（`cut -d/ -f1`），别照抄 udev 的写法。
+另外**必须用 `DEVTYPE=usb_device` 过滤**，否则一次枚举会按接口写好几行重复。
+
+#### LuCI「网络 → 5G 模组」新增日志区
+
+- 同一个页面第 ② 块：`<pre>` 倒序显示（最新在最上）+ 刷新 / 清空
+- 数据来自 ubus `hinlink-modem.log '{"lines":200}'`（rpcd 插件新增方法）
+- **操作按钮点完自动刷新日志** —— 正好看到刚触发的那几步
+- 状态区仍 5 秒轮询；日志**不**轮询（否则你正在看就被顶走了）
+
+ACL 相应加 `log`（read）/ `log_clear`（write）。
+
+#### 验证
+
+- 构建机跑后端：`log` / `log-add` / `log-json` 输出经 `jsonfilter` 校验合法
+- 实机 `ubus call hinlink-modem log '{"lines":3}'` 返回正确 JSON（LuCI 真实链路）
+- hotplug 过滤：手工喂 `DEVTYPE=usb_interface`、以及 `PRODUCT=1d6b/2/600`
+  （root hub，非模组）**都不写日志**；只有 `usb_device` + 模组 VID 才写
+- `curl http://<机>/luci-static/resources/view/hinlink-modem.js` = HTTP 200 且与本地一致
+
+#### ⚠️ 日志时间戳依赖系统时钟
+
+实机实测系统时间是 `Oct 12`（实际 `Oct 14`），且时区为 GMT —— 没配 NTP /
+时区。**日志里的时间会跟着错**。建议在 LuCI「系统 → 系统」设好时区并启用
+NTP 客户端。脚本本身不做时间纠正（那属于系统层的事）。
+
+---
+
 ## 五、仓库结构
 
 ```

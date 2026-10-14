@@ -31,41 +31,49 @@ STOP=10
 
 MODEM=/usr/libexec/hinlink-modem
 
-EXTRA_COMMANDS="status reset power_off power_on usb_reset"
+EXTRA_COMMANDS="status reset power_off power_on usb_reset log log_clear"
 EXTRA_HELP="	status       显示 5G 模组 rfkill / regulator / USB 状态
 	reset        软复位 5G 模组（拉复位 -> 等 -> 释放 -> 等启动）
 	power_off    只断电 / 拉复位（保持）
 	power_on     只上电 / 释放复位
-	usb_reset    只在 USB 层重新枚举模组"
+	usb_reset    只在 USB 层重新枚举模组
+	log [N]      打印最近 N 行日志（默认 100）
+	log_clear    清空日志文件"
 
 status()    { "$MODEM" status; }
 reset()     { "$MODEM" reset; }
 power_off() { "$MODEM" power-off; }
 power_on()  { "$MODEM" power-on; }
 usb_reset() { "$MODEM" usb-reset; }
+log()       { "$MODEM" log "${1:-100}"; }
+log_clear() { "$MODEM" log-clear; }
 
 start() {
 	[ "$(uci -q get hinlink-modem.modem.enabled)" = "0" ] && return 0
 
 	# rfkill-gpio 是内建（=y，device_initcall），用户态一定晚于它 ——
 	# 理论上不用等。留 5 秒窗口只是防「将来它变成模块 / probe defer」。
-	local i
+	#
+	# ★ H69K 只有一路 GPIO，连「供电使能」都靠 rfkill-gpio 成功 probe，
+	#   所以这里的检查结果对 H69K 尤其重要（连不上网先看这条日志）。
+	local i ok=0
 	for i in 1 2 3 4 5 6 7 8 9 10; do
-		"$MODEM" status-json 2>/dev/null | grep -q '"rfkill_found":1' && break
+		if "$MODEM" status-json 2>/dev/null | grep -q '"rfkill_found":1'; then
+			ok=1
+			break
+		fi
 		sleep 0.5
 	done
-	if ! "$MODEM" status-json 2>/dev/null | grep -q '"rfkill_found":1'; then
-		logger -t hinlink-modem "警告：5 秒内没等到 type=wwan 的 rfkill 设备"
-		logger -t hinlink-modem "  查 DTS 的 rfkill-modem 节点（label / radio-type）与 CONFIG_RFKILL_GPIO=y"
-		logger -t hinlink-modem "  内核日志：$(dmesg 2>/dev/null | grep -i rfkill | tail -3)"
+
+	if [ "$ok" = "1" ]; then
+		"$MODEM" log-add INFO "开机：rfkill-modem 就绪"
+	else
+		"$MODEM" log-add ERROR "开机：5 秒内没等到 type=wwan 的 rfkill 设备 —— 查 DTS 的 rfkill-modem 节点（label / radio-type）与 CONFIG_RFKILL_GPIO=y"
 	fi
 
-	logger -t hinlink-modem "开机：记录 5G 模组状态"
-	"$MODEM" status 2>&1 | logger -t hinlink-modem
-
 	if [ "$(uci -q get hinlink-modem.modem.auto_reset)" = "1" ]; then
-		logger -t hinlink-modem "auto_reset=1，开机软复位一次"
-		"$MODEM" reset 2>&1 | logger -t hinlink-modem
+		"$MODEM" log-add INFO "auto_reset=1 → 开机软复位一次"
+		"$MODEM" reset
 	fi
 }
 

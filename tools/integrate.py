@@ -139,29 +139,34 @@ else:
         done.append(os.path.basename(f))
     print("  追加到 %s" % (", ".join(done) if done else "(未找到 config-*)"))
 
-print("[6] base-files 其它文件（init.d / hotplug.d / uci-defaults）")
-# 说明：board.d 下的 01_leds / 02_network 是"合并"的（见 [1]），必须跳过，
-#       否则会把官方机型的配置整段覆盖掉。
+print("[6] base-files 其它文件（board.d 新文件 / init.d / hotplug.d / uci-defaults / libexec）")
+# 说明：board.d 下的 01_leds / 02_network 是"合并"进官方文件的（见 [1] [2]），
+#       必须**逐个文件**跳过，否则会把官方机型的配置整段覆盖掉。
+#       但 board.d 下**其它**文件（如我们新增的 03_hinlink-lan-ip）应当正常拷贝 ——
+#       OpenWrt 的 /bin/board_detect 本来就按 `for a in $(ls /etc/board.d/*)`
+#       逐个执行并累加结果，多一个脚本是官方支持的用法。
 #       Windows 侧 git 不保留可执行位，所以这里对脚本目录统一 chmod 0755。
 bf_src = os.path.join(SRC, "target/linux/rockchip/armv8/base-files")
 bf_dst = os.path.join(ROCK, "armv8/base-files")
 EXEC_DIRS = ("init.d", "hotplug.d", "uci-defaults", "libexec")
+BOARD_D_MERGE = ("01_leds", "02_network")   # 这两个走合并，不做整文件拷贝
 nfile = 0
 if os.path.isdir(bf_src):
     for root, dirs, files in os.walk(bf_src):
         rel = os.path.relpath(root, bf_src)
         parts = [] if rel == "." else rel.split(os.sep)
-        if "board.d" in parts:
-            continue
         od = bf_dst if rel == "." else os.path.join(bf_dst, rel)
         os.makedirs(od, exist_ok=True)
         for f in sorted(files):
+            if "board.d" in parts and f in BOARD_D_MERGE:
+                continue
             dp = os.path.join(od, f)
             shutil.copy2(os.path.join(root, f), dp)
             if any(d in parts for d in EXEC_DIRS):
                 os.chmod(dp, 0o755)
             nfile += 1
-    print("  拷贝 %d 个文件（%s 下已置 0755）" % (nfile, "/".join(EXEC_DIRS)))
+    print("  拷贝 %d 个文件（%s 下已置 0755；board.d 下 %s 走合并）"
+          % (nfile, "/".join(EXEC_DIRS), " / ".join(BOARD_D_MERGE)))
 else:
     print("  (无 base-files 目录，跳过)")
 

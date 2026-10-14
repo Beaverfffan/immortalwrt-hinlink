@@ -1,18 +1,23 @@
 'use strict';
 /* SPDX-License-Identifier: Apache-2.0 */
 /*
- * HinLink 5G 模组 —— 状态 / 手动软复位 / 开机行为配置
+ * HinLink 5G 模组 —— 状态 / 手动软复位 / 日志 / 开机行为
  *
  * 机理
  * ----
  * 5G 的「复位 / 使能」脚在 DTS 里归 rfkill-gpio，
  * /sys/class/rfkill/rfkillN/state 是 DEVICE_ATTR_RW（可写）：
- *     echo 0  -> 拉复位        echo 1  -> 释放
+ *     echo 0  -> 拉复位（H69K 上同时就是断电）    echo 1  -> 释放
  * 所以「0 -> 等一会儿 -> 1」就是一次硬复位脉冲。
  *
- * 后端 = /usr/libexec/hinlink-modem，由 rpcd 插件 `hinlink-modem`
- * （/usr/libexec/rpcd/hinlink-modem）转发成 ubus 方法：
- *     status / reset / power_off / power_on / usb_reset
+ * 后端 = /usr/libexec/hinlink-modem；rpcd 插件
+ * （/usr/libexec/rpcd/hinlink-modem）把它转发成 ubus 方法：
+ *     status / reset / power_off / power_on / usb_reset / log / log_clear
+ *
+ * 日志由三处写入，都汇总到 /etc/hinlink-modem.log：
+ *   · 手动操作（本页面的按钮、或 CLI）
+ *   · 开机检查（/etc/init.d/hinlink-modem）
+ *   · 模组 USB 插拔（/etc/hotplug.d/usb/50-hinlink-modem）
  *
  * 详见 docs/HARDWARE.md §四。
  */
@@ -23,6 +28,8 @@
 'require rpc';
 'require ui';
 'require uci';
+
+var LOG_LINES = 200;
 
 var callStatus = rpc.declare({
 	object: 'hinlink-modem',
@@ -35,8 +42,20 @@ var callPowerOff = rpc.declare({ object: 'hinlink-modem', method: 'power_off', e
 var callPowerOn  = rpc.declare({ object: 'hinlink-modem', method: 'power_on',  expect: {} });
 var callUsbReset = rpc.declare({ object: 'hinlink-modem', method: 'usb_reset', expect: {} });
 
+var callLog = rpc.declare({
+	object: 'hinlink-modem',
+	method: 'log',
+	params: [ 'lines' ],
+	expect: { entries: [] }
+});
+
+var callLogClear = rpc.declare({ object: 'hinlink-modem', method: 'log_clear', expect: {} });
+
 /* 轮询时就地更新的节点 */
 var nodes = {};
+
+/* 日志刷新函数：render 时赋值，操作按钮完成后复用 */
+var refreshLog = null;
 
 function num(v, unit) {
 	return (v === 0 || v) ? (String(v) + (unit || '')) : '—';
@@ -75,6 +94,23 @@ function applyState(st) {
 		nodes.timing.textContent = '拉复位 ' + num(st.hold_ms) + ' ms，释放后等 ' + num(st.boot_wait) + ' s';
 }
 
+function renderLog(r) {
+	r = r || {};
+
+	/* 文件是追加写的，最新的在最后 —— 显示时倒过来，最新在最上面 */
+	var e = (r.entries || []).slice().reverse();
+
+	if (nodes.log)
+		nodes.log.textContent = e.length
+			? e.join('\n')
+			: '（暂无记录）\n点上面的按钮做一次软复位，或等模组 USB 插拔事件。';
+
+	if (nodes.logmeta)
+		nodes.logmeta.textContent = '共 ' + (r.total | 0) + ' 行'
+			+ '（上限 ' + (r.max_lines || 300) + ' 行，超出自动轮转）'
+			+ (r.file ? ' · ' + r.file : '');
+}
+
 function row(label, key) {
 	nodes[key] = E('em', {}, '—');
 	return E('tr', { 'class': 'tr' }, [
@@ -100,9 +136,11 @@ function actionButton(label, fn, kind) {
 					applyState(st);
 					ui.addNotification(null, E('p', {}, label + '：已下发'), 'info');
 				})
+				.then(function() { return refreshLog ? refreshLog() : null; })
 				.catch(function(e) {
 					ui.hideModal();
 					ui.addNotification(null, E('p', {}, String((e && e.message) || e)), 'error');
+					return refreshLog ? refreshLog() : null;
 				});
 		}
 	}, label);
@@ -112,12 +150,14 @@ return view.extend({
 	load: function() {
 		return Promise.all([
 			callStatus(),
+			callLog(LOG_LINES),
 			uci.load('hinlink-modem')
 		]);
 	},
 
 	render: function(data) {
 		var st = (data && data[0]) || {};
+		var lg = (data && data[1]) || {};
 
 		/* ---------- ① 状态 ---------- */
 		var statusTable = E('table', { 'class': 'table' }, [
@@ -148,7 +188,64 @@ return view.extend({
 
 		applyState(st);
 
-		/* ---------- ② 配置 ---------- */
+		/* ---------- ② 日志 ---------- */
+		nodes.log = E('pre', {
+			'style': 'margin:0;padding:.6em .8em;max-height:24em;overflow:auto;'
+				+ 'background:rgba(127,127,127,.10);'
+				+ 'border:1px solid rgba(127,127,127,.35);border-radius:3px;'
+				+ 'font-family:monospace;font-size:92%;line-height:1.45;'
+				+ 'white-space:pre-wrap;word-break:break-word;'
+		}, '（载入中…）');
+
+		nodes.logmeta = E('em', {}, '');
+
+		refreshLog = function() {
+			return callLog(LOG_LINES).then(renderLog).catch(function(e) {
+				if (nodes.log)
+					nodes.log.textContent = '读取失败：' + String((e && e.message) || e);
+			});
+		};
+
+		renderLog(lg);
+
+		var logButtons = E('div', { 'class': 'cbi-page-actions' }, [
+			E('button', {
+				'class': 'btn cbi-button cbi-button-action',
+				'click': function(ev) { ev.preventDefault(); return refreshLog(); }
+			}, '刷新日志'),
+			E('button', {
+				'class': 'btn cbi-button cbi-button-reset',
+				'click': function(ev) {
+					ev.preventDefault();
+					if (!confirm('确定清空 5G 模组日志？此操作不可撤销。'))
+						return;
+
+					return callLogClear().then(function() {
+						ui.addNotification(null, E('p', {}, '日志已清空'), 'info');
+						return refreshLog();
+					}).catch(function(e) {
+						ui.addNotification(null, E('p', {},
+							'清空失败：' + String((e && e.message) || e)), 'error');
+					});
+				}
+			}, '清空日志')
+		]);
+
+		var logSection = E('div', { 'class': 'cbi-section' }, [
+			E('h3', {}, '日志'),
+			E('div', { 'class': 'cbi-section-descr' }, [
+				'记录手动操作、开机检查与模组 USB 插拔事件（最新在最上面）。',
+				E('br'),
+				'同一份内容也写进 syslog，可用 ',
+				E('code', {}, 'logread | grep hinlink'),
+				' 看；模组掉线后重新枚举的耗时可以从这里对上时间轴。'
+			]),
+			nodes.log,
+			E('div', { 'class': 'cbi-section-descr' }, [ nodes.logmeta ]),
+			logButtons
+		]);
+
+		/* ---------- ③ 配置 ---------- */
 		var m = new form.Map('hinlink-modem', '开机行为',
 			'这些选项在 /etc/init.d/hinlink-modem 的 start() 时生效。');
 
@@ -173,17 +270,24 @@ return view.extend({
 		o.default = '300';
 
 		o = s.option(form.Value, 'boot_wait', '释放后等启动（秒）',
-			'原内核 regulator 的 startup-delay-us = 2 s 就是等这个。');
+			'原内核 regulator 的 startup-delay-us = 2 s 就是等这个。FM160 实际约需 20 s，'
+			+ '但这里不宜设太大（会拖慢开机），靠日志里的 hotplug 记录确认模组何时回来。');
 		o.datatype = 'uinteger';
 		o.placeholder = '2';
 		o.default = '2';
+
+		o = s.option(form.Value, 'log_max_lines', '日志保留行数',
+			'超过后自动轮转（只留最近一半）。日志在 /etc/hinlink-modem.log。');
+		o.datatype = 'uinteger';
+		o.placeholder = '300';
+		o.default = '300';
 
 		return m.render().then(function(formNode) {
 			poll.add(function() {
 				return callStatus().then(applyState);
 			}, 5);
 
-			return E('div', {}, [ statusSection, formNode ]);
+			return E('div', {}, [ statusSection, logSection, formNode ]);
 		});
 	},
 
