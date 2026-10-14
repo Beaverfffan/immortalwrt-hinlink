@@ -411,7 +411,8 @@ done
 # 2. 供电 regulator（H29K / H88K / H89K）
 cat /sys/kernel/debug/regulator/regulator_summary | grep -i modem
 
-# 3. 模组是否枚举
+# 3. 模组是否枚举（正式判据 = 接口结构，见 README「模组识别」一节；
+#    下面这条 lsusb 过滤只是人工速查 —— 靠厂名字符串 + 常见 VID，会漏）
 lsusb | grep -iE "quectel|fibocom|2cb7|2dee|0e8d"
 ls /dev/ttyUSB* /dev/cdc-wdm* 2>/dev/null
 
@@ -443,8 +444,9 @@ echo 1 > /sys/class/rfkill/rfkill0/state   # 释放 / 上电
 ```
 
 **① LuCI 页面**：**网络 → 5G复位**
-状态（每 5 秒轮询）+ 四个动作按钮（软复位 / 断电 / 上电 / 仅 USB 重枚举）
-+ 开机行为配置（`enabled` / `auto_reset` / `hold_ms` / `boot_wait`）。
+状态（每 5 秒轮询）+ 四个动作按钮（**按操作顺序排**：断电 → 上电 → 软复位 →
+仅 USB 重新枚举；「软复位」是「断电 + 等 hold_ms + 上电」的合成）
++ 开机行为配置（`enabled` / `auto_reset` / `hold_ms` / `boot_wait` / `usb_all`）。
 后端是 rpcd 插件 `hinlink-modem-hardreset` → `/usr/libexec/hinlink-modem-hardreset`。
 
 **② CLI**（`/etc/init.d/hinlink-modem-hardreset`）—— 注意命令名用**下划线**：
@@ -468,7 +470,8 @@ rc.common 会把 `EXTRA_COMMANDS` 的条目当函数名调用，而函数名不�
 ```
 
 **④ USB 层复位**：`usbreset <vid>:<pid>`（usbutils 自带），
-或 `hinlink-modem-hardreset usb-reset`（按 VID 白名单自动找模组）。
+或 `hinlink-modem-hardreset usb-reset`（按**接口结构判据**自动找模组 ——
+导出了 ttyUSB*/cdc-wdm*，或有 USB 网卡 + 0xff 接口；不再依赖 VID 白名单）。
 与 pin 复位互补 —— 模组固件卡死时 pin 复位更彻底；
 只是枚举丢了，USB 重枚举就够。
 

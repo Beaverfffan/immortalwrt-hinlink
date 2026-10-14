@@ -28,3 +28,12 @@ config hinlink-modem-hardreset 'modem'
 	# 日志文件 /etc/hinlink-modem-hardreset.log 在 overlay 上，sysupgrade 会保留。
 	# 同时也会写一份到 syslog（logger -t hinlink-modem-hardreset）。
 	option log_max_lines '300'
+
+	# 模组识别方式（2026-10-14 起）：
+	#   默认 0 —— 按**接口结构**判断，不看 VID：
+	#             导出了 ttyUSB*/ttyACM*/cdc-wdm*，或有 USB 网卡 + 0xff 接口
+	#             就算模组。任何厂家的 4G/5G 模组都会命中；U 盘 / 键鼠 / HUB /
+	#             普通 USB 网卡不会。换别家模组无需改任何代码。
+	#   改成 1 —— 无脑通配：任何非 root-hub 的 USB 设备插拔都记一条，不做
+	#             识别。只在「明明插着模组却判不出来」时用来排查。
+	option usb_all '0'

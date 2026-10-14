@@ -9,3 +9,11 @@
 *.hinlink     text eol=lf
 *.py          text eol=lf
 *.md          text eol=lf
+*.js          text eol=lf
+*.append      text eol=lf
+# 本项目这几个脚本**没有扩展名**，上面的通配管不到，单独列出来：
+# shell 脚本里混进 CR 是致命的（busybox ash 不认 `esac\r` 是关键字，
+# 直接语法错误；Makefile 同理），而这几个文件正是会进构建树的。
+50-hinlink-modem-hardreset  text eol=lf
+hinlink-modem-hardreset     text eol=lf
+03_hinlink-lan-ip           text eol=lf

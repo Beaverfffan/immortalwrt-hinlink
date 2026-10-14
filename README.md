@@ -1298,8 +1298,51 @@ ACTION=add|remove
 BUSNUM / DEVNUM
 ```
 
-所以匹配 VID 要从 `PRODUCT` 里切（`cut -d/ -f1`），别照抄 udev 的写法。
+所以需要用 VID 时要从 `PRODUCT` 里切（`cut -d/ -f1`），别照抄 udev 的写法。
 另外**必须用 `DEVTYPE=usb_device` 过滤**，否则一次枚举会按接口写好几行重复。
+
+★ 但**别拿 VID 当模组的身份判据**（2026-10-14 改）：VID 白名单换别家模组
+就整条链路失灵 —— 现在按**接口结构**判，见下面「模组识别：结构判据」一节。
+
+#### ★ 模组识别：结构判据（2026-10-14 起）
+
+以前用一份 **VID 白名单**（`2c7c 2cb7 2dee …`）认模组。毛病是换别家模组
+（移远 / 中移 / SIMCom / 美格 / 龙尚 …）时，「模组上线 / 下线」这条最关键
+的日志会整条消失，`usb-reset` 也会直接报找不到 —— 而这正是排查时唯一想让
+用户看到的东西。
+
+现在改成问「这个 USB 设备**变成了什么**」，而不是「它是谁」：
+
+| 判据 | 命中条件 | 覆盖 |
+|---|---|---|
+| ① 字符口 | 设备下出现 `ttyUSB*`（option）/ `ttyACM*`（cdc_acm）/ `cdc-wdm*`（qmi_wwan，在 `usbmisc/` 下） | 绝大多数 4G/5G 模组 |
+| ② 网卡 + 0xff | 设备下有 USB 网卡，**且**至少一个接口 `bInterfaceClass=0xff` | 纯 ECM/MBIM/RNDIS 形态模组 |
+
+两条都**不看 VID**，所以对任何厂家成立 —— 模组不管谁造的，都只能靠标准驱动
+（option / qmi_wwan / cdc_mbim / cdc_ether / cdc_acm / rndis_host）工作，
+内核生成的节点名是固定的。反过来不命中的：U 盘（只有 block）、键鼠（HID）、
+HUB（类 0x09）、普通 USB 网卡（r8152 只有 net、没有 0xff 接口）。
+
+**实测（H69K + FM160）**：
+
+```
+6-1  2cb7:0105   ttys=4  nets=1  ff=4      ← 命中①（option ×4 + cdc_ether ×2）
+usb1..usb6  1d6b:*  ttys=0  nets=0  ff=0   ← root hub，不命中
+```
+
+**时序**：hotplug 的设备级 `add` 事件发出时接口目录已经存在，但 `ttyUSB*`
+要等 option 驱动 probe 之后才出现 ⇒ **事件当下判定会漏**。所以 `add` 交给
+`usb-probe` **轮询等待**（上限 `USB_PROBE_WAIT=10` s）再记日志，
+日志里会带上「等了 Ns」。`remove` 时设备已消失、查不了结构，改用 `add` 时
+写下的状态文件（`/tmp/hinlink-modem.usb`）比对，再兜一层已知 VID
+（防轮询还没跑完就被拔）。
+
+**想退回「全通配」**：UCI `hinlink-modem-hardreset.modem.usb_all=1`
+（LuCI「开机行为 → 记录所有 USB 设备」），任何非 root-hub 的 USB 设备插拔
+都记一条，完全不做识别。只在「明明插着模组却判不出来」时用来排查。
+
+页面「状态」区因此多了一行 **识别依据**，直接写明是「结构判据 · 字符口 4 个」
+还是「未命中」，不再只丢一句白名单结论。
 
 #### LuCI「网络 → 5G复位」新增日志区
 
@@ -1314,8 +1357,11 @@ ACL 相应加 `log`（read）/ `log_clear`（write）。
 
 - 构建机跑后端：`log` / `log-add` / `log-json` 输出经 `jsonfilter` 校验合法
 - 实机 `ubus call hinlink-modem-hardreset log '{"lines":3}'` 返回正确 JSON（LuCI 真实链路）
-- hotplug 过滤：手工喂 `DEVTYPE=usb_interface`、以及 `PRODUCT=1d6b/2/600`
-  （root hub，非模组）**都不写日志**；只有 `usb_device` + 模组 VID 才写
+- hotplug 过滤：手工喂 `DEVTYPE=usb_interface` **不写日志**；
+  `PRODUCT=1d6b/2/600`（root hub，非模组）在 hotplug 层就被 `vid=1d6b` 挡掉，
+  即使直接调 `usb-probe` 也只会记一条 INFO「未判为模组」
+- 模组判定走**接口结构**：实测 FM160（`6-1 2cb7:0105`，ttys=4 nets=1 ff=4）
+  判为「结构判据 · 字符口 4 个」；root hub（ttys=0 nets=0 ff=0）判为不是模组
 - `curl http://<机>/luci-static/resources/view/hinlink-modem-hardreset.js` = HTTP 200 且与本地一致
 
 #### ⚠️ 日志时间戳依赖系统时钟

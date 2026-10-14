@@ -38,7 +38,7 @@ var LOG_LINES = 200;
  * 缓存住旧 JS，改多少代码都看不见。页面上直接印版本号，
  * 「看不到 v2」≈「浏览器还在用旧文件」，省得来回猜。
  */
-var PAGE_VERSION = '前端 v2 · 2026-10-14';
+var PAGE_VERSION = '前端 v3 · 2026-10-14';
 
 var callStatus = rpc.declare({
 	object: 'hinlink-modem-hardreset',
@@ -110,8 +110,22 @@ function applyState(st) {
 
 	if (nodes.usb)
 		nodes.usb.textContent = st.usb_dev
-			? (st.usb_dev + '   ' + (st.usb_vid || '') + ':' + (st.usb_pid || ''))
-			: '未匹配到常见模组 USB（VID 白名单）';
+			? (st.usb_dev + '   ' + (st.usb_vid || '') + ':' + (st.usb_pid || '')
+				+ (st.usb_driver ? '   · ' + st.usb_driver : ''))
+			: '未发现通信模组（已按接口结构判据扫描）';
+
+	/*
+	 * 识别依据 —— 让「为什么判成模组 / 为什么判不出来」直接可见。
+	 * 2026-10-14 之前这里写死的是「VID 白名单」，换别家模组只会得到一句
+	 * 「未匹配到常见模组 USB」，看不出到底是没插、还是判据不适用。
+	 * 现在后端回的是「匹配来源 + 结构摘要」（结构判据 / 已知 VID / 通配）。
+	 */
+	if (nodes.umatch)
+		nodes.umatch.textContent = st.usb_match
+			? (st.usb_match + (st.usb_reason ? '   ·   ' + st.usb_reason : ''))
+			: (String(st.usb_all) === '1'
+				? '通配模式已开（任何 USB 设备插拔都会记录）'
+				: '未命中 —— 判据：导出了 ttyUSB/cdc-wdm，或有 USB 网卡 + 0xff 接口');
 
 	if (nodes.tty)
 		nodes.tty.textContent = st.usb_tty ? st.usb_tty
@@ -231,6 +245,7 @@ return view.extend({
 			row('复位控制（rfkill-gpio）', 'rfkill'),
 			row('供电 regulator', 'reg'),
 			row('模组 USB 设备', 'usb'),
+			row('识别依据', 'umatch'),
 			row('串口 / QMI 节点', 'tty'),
 			row('复位时序', 'timing')
 		]);
@@ -325,13 +340,23 @@ return view.extend({
 				nodes.log.textContent = '日志渲染失败：' + String((e && e.message) || e);
 		}
 
-		var logButtons = E('div', { 'class': 'cbi-page-actions' }, [
+		/* 与上面四个动作按钮同样的处理：容器 flex + 子项 float:none ——
+		 * 否则主题那条 `.cbi-page-actions > :not(apply/save/reset/negative)
+		 * {float:left}` 会把「刷新日志」抽到左边、「清空日志」挤到右边。
+		 * 机理与样式说明见状态区 actions 处的长注释。 */
+		var logButtons = E('div', {
+			'class': 'cbi-page-actions',
+			'style': 'display:flex;flex-wrap:wrap;align-items:center;'
+				+ 'justify-content:flex-start;gap:.5em'
+		}, [
 			E('button', {
 				'class': 'btn cbi-button cbi-button-action',
+				'style': 'float:none;margin-right:0',
 				'click': function(ev) { ev.preventDefault(); return refreshLog(); }
 			}, '刷新日志'),
 			E('button', {
 				'class': 'btn cbi-button cbi-button-reset',
+				'style': 'float:none;margin-right:0',
 				'click': function(ev) {
 					ev.preventDefault();
 					if (!confirm('确定清空 5G 模组日志？此操作不可撤销。'))
@@ -398,6 +423,15 @@ return view.extend({
 		o.datatype = 'uinteger';
 		o.placeholder = '300';
 		o.default = '300';
+
+		o = s.option(form.Flag, 'usb_all', '记录所有 USB 设备（不做模组识别）',
+			'默认关闭。关闭时按**接口结构**判断模组 —— 导出了 ttyUSB / ttyACM / '
+			+ 'cdc-wdm，或者有 USB 网卡 + vendor-specific(0xff) 接口，就算模组；'
+			+ '任何厂家的 4G/5G 模组都会命中，U 盘 / 键鼠 / HUB / 普通 USB 网卡不会。'
+			+ '打开后 U 盘、HUB、键鼠的插拔也会记进日志，只在「明明插着模组却判不出来」'
+			+ '时用来排查。');
+		o.default = '0';
+		o.rmempty = false;
 
 		return m.render().then(function(formNode) {
 			poll.add(function() {
