@@ -1598,6 +1598,75 @@ config 由 `tools/gen_configs.py` 生成：拿一份已编过固件的**全机�
 
 ---
 
+### 4.25 ★ 2026-10-14 发行版编译：分区 128/1024 + 四件套（全机型）
+
+**用户要求**：kernel 与 rootfs 分区改成 **128 MB / 1024 MB**；打包
+`luci-app-passwall` / `luci-app-openclash` / `luci-app-ttyd` / `luci-app-upnp`；
+**所有机型**编译；**发布进 release**。
+
+**★ 随后追加的约定（重要）**：
+
+> 「**不要更新 configs，这个只是编译发行版用的**」
+
+⇒ 这组改动**只服务于这一次的发行版固件**，不写进仓库 configs：
+- 标准 `configs/` 保持 **16/160、不带四件套**（git HEAD 不动、不提交）；
+- 发行版配置**独立存放**：构建机 `~/iwrt-hinlink-full/configs-release/`。
+
+**技术要点**
+
+1. 分区两个值**只影响镜像生成**（分区表 + padding），不参与任何 C 编译
+   ⇒ 改它不会引起重编。放大原因：passwall / openclash 的依赖
+   （xray-core / sing-box / ruby）在 160 MB rootfs 里放不下。
+2. 四个包都在官方 `feeds/luci/applications/` ⇒ **不需要额外 feed 源**。
+   passwall 的 8 个 `INCLUDE_*` 子选项要**显式钉住**（默认值各版本不一，不写会
+   得到不带 xray/sing-box 的残缺包）；openclash 的 kmod 依赖
+   （`kmod-tun` / `kmod-inet-diag` / `kmod-nft-tproxy` / `kmod-nft-socket`）
+   由 defconfig 自动 select。
+3. `gen_configs.py`：机型行改为**显式重建**（不再遍历底稿重写）—— 底稿若是
+   「某个单机型 config」，机型行已被 kconfig 规范化过，重写不可靠；
+   同一处跳过 `CONFIG_PACKAGE_luci-app-hinlink-modem-hardreset`（由 `MODEM_APP` 决定）。
+
+**★ 用单机型编译（`tools/build_single.sh`），不用 `build_all.sh` 的多机型模式**
+
+多机型 `PER_DEVICE_ROOTFS=n` ⇒ 所有机型**共用一份 rootfs** ⇒ .config 里 =y 的
+包会落到**每一个**机型，5G 复位面板会扩散到全部 16 个（用户要求它只在 5 个）。
+单机型模式产物与 `configs/<机型>.config` 一一对应，代价是每机型重跑一次 make。
+
+**★ 第一轮结果：11 个成功 / 5 个失败**，失败的**恰好**是带 5G 复位面板的
+h69k / h69k-mini / h88k-v2 / h88k-v3 / h89k。
+
+**根因**：构建树的 `target/linux/rockchip/armv8/base-files/` 里**还留着那 10 个
+hinlink-modem-hardreset 文件** —— 上一轮「包化搬出」时只在**本地 repo2** 删了，
+这棵构建树的 base-files 没同步删（它由原树 rsync 而来）。于是包与 base-files
+**同名文件相撞**：
+
+```
+ERROR: luci-app-hinlink-modem-hardreset: trying to overwrite
+       etc/config/hinlink-modem-hardreset owned by base-files-1950~b9bdaaa503
+（10 个文件全报）→ package/install 失败 → 该机型不产镜像
+```
+
+**★ 第二个坑（隐蔽）：base-files 有编译缓存。** 只删文件不够，旧产物里仍带着
+那 10 个文件，必须
+`make package/base-files/clean && make package/base-files/compile`
+再重编；验证方式是 `make -j1 V=s package/install` 看 `rc=0` 且
+`trying to overwrite` 计数为 0。
+
+**排查手法（可复用）**：`make -j16` 的错误被 `-s` 静音了（只打印
+`make[3] -C xxx compile`），必须 `make -j1 V=s <目标>` 才看得到真正原因；
+另外「**失败机型集合 = 装了某个包的机型集合**」是极强的线索 ——
+直接用 `comm` 对比成功/失败机型的 config 差异即可锁定。
+
+**新增工具**
+- `tools/build_single.sh` —— 逐机型编译（单机型 config 模式，断点续跑）
+- `tools/publish_release.py` —— 发布 GitHub release（建 release + 传 asset，
+  带重试与断点续传，自动生成 `sha256sums.txt`）
+
+**发行仓库补提交**：`2302fe11`（删除 base-files 里的残留文件）—— 否则用户
+clone 后编译会撞同一个坑。
+
+---
+
 ## 五、仓库结构
 
 ```
