@@ -42,11 +42,29 @@ var callPowerOff = rpc.declare({ object: 'hinlink-modem', method: 'power_off', e
 var callPowerOn  = rpc.declare({ object: 'hinlink-modem', method: 'power_on',  expect: {} });
 var callUsbReset = rpc.declare({ object: 'hinlink-modem', method: 'usb_reset', expect: {} });
 
+/*
+ * ★ 这里**不能**写 `expect: { entries: [] }`。
+ *
+ *   LuCI 的 rpc.js（handleCallReply）对 expect 的处理是：
+ *       for (const key in req.expect) {
+ *           if (ret != null && key != '')  ret = ret[key];
+ *           if (ret == null || type.call(ret) != type.call(req.expect[key]))
+ *               ret = req.expect[key];
+ *           break;
+ *       }
+ *   即「把**整个返回值替换成 expect 里的第一个字段**」—— 它不是类型校验，
+ *   而是"只取这个字段"。副作用有两个：
+ *     ① total / max_lines / file 全被丢掉（页面上的行数统计永远是 0）；
+ *     ② 一旦类型判断把 entries 换成 req.expect[key]（一个非数组值），
+ *        前端再调 `r.entries.slice()` 就直接 TypeError、整页打白。
+ *        实测用户就是这样报的：(r.entries || []).slice is not a function
+ *
+ *   ⇒ 不写 expect，拿完整对象，字段自己兜底（见 logEntries）。
+ */
 var callLog = rpc.declare({
 	object: 'hinlink-modem',
 	method: 'log',
-	params: [ 'lines' ],
-	expect: { entries: [] }
+	params: [ 'lines' ]
 });
 
 var callLogClear = rpc.declare({ object: 'hinlink-modem', method: 'log_clear', expect: {} });
@@ -94,11 +112,41 @@ function applyState(st) {
 		nodes.timing.textContent = '拉复位 ' + num(st.hold_ms) + ' ms，释放后等 ' + num(st.boot_wait) + ' s';
 }
 
+/*
+ * 容忍后端 / 传输层可能给出的几种形态，避免一行 TypeError 把整页打白：
+ *   · { total, showing, max_lines, file, entries: [...] }   正常
+ *   · [...]                        —— 只剩 entries（旧 expect 写法的后果）
+ *   · { entries: { "0": "...", "1": "..." } }   下标对象（被序列化转过）
+ *   · 其它                          —— 当作空
+ */
+function logEntries(r) {
+	if (Array.isArray(r))
+		return r;
+
+	if (r && typeof r === 'object') {
+		var e = r.entries;
+
+		if (Array.isArray(e))
+			return e;
+
+		if (e && typeof e === 'object')
+			/* 整数键会被 JS 按升序枚举，顺序能对上 */
+			return Object.keys(e).map(function(k) { return e[k]; });
+
+		/* 极少数情况：传进来的本身就是下标对象（数组被序列化转过） */
+		var ks = Object.keys(r);
+		if (ks.length && ks.every(function(k) { return /^\d+$/.test(k); }))
+			return ks.map(function(k) { return r[k]; });
+	}
+
+	return [];
+}
+
 function renderLog(r) {
-	r = r || {};
+	var meta = (r && typeof r === 'object' && !Array.isArray(r)) ? r : {};
 
 	/* 文件是追加写的，最新的在最后 —— 显示时倒过来，最新在最上面 */
-	var e = (r.entries || []).slice().reverse();
+	var e = logEntries(r).slice().reverse();
 
 	if (nodes.log)
 		nodes.log.textContent = e.length
@@ -106,9 +154,9 @@ function renderLog(r) {
 			: '（暂无记录）\n点上面的按钮做一次软复位，或等模组 USB 插拔事件。';
 
 	if (nodes.logmeta)
-		nodes.logmeta.textContent = '共 ' + (r.total | 0) + ' 行'
-			+ '（上限 ' + (r.max_lines || 300) + ' 行，超出自动轮转）'
-			+ (r.file ? ' · ' + r.file : '');
+		nodes.logmeta.textContent = '共 ' + (meta.total | 0) + ' 行'
+			+ '（上限 ' + (meta.max_lines || 300) + ' 行，超出自动轮转）'
+			+ (meta.file ? ' · ' + meta.file : '');
 }
 
 function row(label, key) {
@@ -206,7 +254,12 @@ return view.extend({
 			});
 		};
 
-		renderLog(lg);
+		try { renderLog(lg); }
+		catch (e) {
+			/* 兜底：日志区出任何意外都不该把整页打白（render 抛异常 = 白屏） */
+			if (nodes.log)
+				nodes.log.textContent = '日志渲染失败：' + String((e && e.message) || e);
+		}
 
 		var logButtons = E('div', { 'class': 'cbi-page-actions' }, [
 			E('button', {

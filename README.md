@@ -1263,9 +1263,62 @@ ACL 相应加 `log`（read）/ `log_clear`（write）。
 
 #### ⚠️ 日志时间戳依赖系统时钟
 
-实机实测系统时间是 `Oct 12`（实际 `Oct 14`），且时区为 GMT —— 没配 NTP /
-时区。**日志里的时间会跟着错**。建议在 LuCI「系统 → 系统」设好时区并启用
-NTP 客户端。脚本本身不做时间纠正（那属于系统层的事）。
+实机实测系统时间是 `Oct 12`（实际 `Oct 14`）—— **RTC 走时本身偏了约 2 天，
+且默认时区是 GMT**。日志时间戳直接取系统时钟，所以会跟着错。
+
+2026-10-14 已在实机上把时区设成 `Asia/Shanghai`（`CST-8`）；NTP 客户端本来
+就是 enabled（`system.ntp.server` = time.apple.com / time1.google.com /
+time.cloudflare.com / pool.ntp.org），**一旦有外网就会自动校准绝对时间**。
+
+⇒ 这台机器「没外网」的原因也一并查清了：`eth0`（WAN）没地址（没插网线 /
+WAN 没起来），`usb0`（FM160 的 cdc_ether 网卡）也没有 IP（5G 尚未拨号）。
+脚本自身不做时间纠正（那属于系统层）。
+
+#### ★ 踩坑：LuCI `rpc.declare` 的 `expect` 不是类型校验，是「只取这个字段」
+
+最初写的是 `expect: { entries: [] }`，以为意思是「entries 是个数组」。
+结果页面直接报：
+
+```
+TypeError: (r.entries || []).slice is not a function
+```
+
+看 LuCI 的 `rpc.js` → `handleCallReply()`：
+
+```js
+if (req.expect) {
+	for (const key in req.expect) {
+		if (ret != null && key != '')
+			ret = ret[key];          // ← 把**整个返回值**换成这个字段
+		if (ret == null || type.call(ret) != type.call(req.expect[key]))
+			ret = req.expect[key];   // ← 类型不符就替换成 expect 里的值
+		break;                       // ← 只处理第一个 key
+	}
+}
+```
+
+⇒ 它的语义是 **「从返回值里取出这几个字段」**（`expect` 里写的是**默认值**），
+**不是**类型校验。写 `{ entries: [] }` 的后果有两个：
+
+1. `total` / `max_lines` / `file` **全部丢失**（页面上的行数统计永远是 0）；
+2. 一旦类型判断把 `entries` 换成 `req.expect[key]`（一个非数组值），
+   前端再调 `.slice()` 就整页 `TypeError`。
+
+**修法**：**不写 `expect`**（拿完整对象），字段自己在前端兜底：
+
+```js
+var callLog = rpc.declare({
+	object: 'hinlink-modem',
+	method: 'log',
+	params: [ 'lines' ]          /* ← 不写 expect */
+});
+```
+
+前端 `logEntries()` 对「数组 / 只剩数组 / 下标对象 / 字符串 / 数字 / null」
+都做了兜底，11 种输入用 node 跑单测全不崩。
+
+> 对照：`expect: {}`（**空对象**）是安全的 —— `for...in` 不产生任何 key，
+> 什么都不会改。本项目其余方法（`status` / `reset`…）用的都是 `expect: {}`。
 
 ---
 
