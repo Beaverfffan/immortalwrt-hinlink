@@ -1547,18 +1547,31 @@ config 由 `tools/gen_configs.py` 生成：拿一份已编过固件的**全机�
 包有没有被静默丢弃（包名写错 / 依赖不满足时 `defconfig` 会悄悄删掉那一行，
 这是最容易漏的坑）。
 
-**④ 5G 复位面板只编进 5 个机型**（2026-10-14 用户指定：有风扇 **且** 有 5G 复位脚）
+**④ 风扇与 5G 复位面板是「两个独立判据」**（2026-10-15 用户更正）
 
-| 机型 | 风扇 | 5G 复位脚 | 编面板 |
-|---|---|---|---|
-| h69k / h69k-mini | ✅ pwm-fan（PWM0 绑 cpu_thermal） | ✅ `GPIO0_C0` | ✅ |
-| h88k-v2 / h88k-v3 / h89k | ✅ pwm14（定义在 `rk3588-hinlink.dtsi`） | ✅ `GPIO4_C6` | ✅ |
-| h29k-v1.3-1.14 / v5-1.14 / v5-1.49 | ❌ 无风扇 | ✅ `GPIO4_B4` | ❌ 按条件排除 |
-| h28k / ht2 / h66k / h68k 全系 ×5 | ❌ | ❌ | ❌ |
+```
+有风扇        -> 编风扇插件（fancontrol + luci-app-fancontrol）
+有 5G 复位脚  -> 编 5G 复位面板（luci-app-hinlink-modem-hardreset）
+```
 
-> 硬件能力是从 DTS 里逐个 grep 出来的（`pwm-fan|fan:|cooling-levels` 与
-> `rfkill`），不是凭印象填的。H29K 三个机型**有复位脚但没有风扇**，按该条件
-> 被排除 —— 要加回来改 `tools/gen_configs.py` 的 `MODEM_APP` 即可。
+| 机型 | 风扇 | 5G 复位脚 | 编风扇插件 | 编 5G 面板 |
+|---|---|---|---|---|
+| h69k / h69k-mini | ✅ pwm-fan（PWM0 绑 cpu_thermal） | ✅ `GPIO0_C0` | ✅ | ✅ |
+| h88k-v2 / h88k-v3 / h89k | ✅ pwm14（定义在 `rk3588-hinlink.dtsi`） | ✅ `GPIO4_C6` | ✅ | ✅ |
+| h29k-v1.3-1.14 / v5-1.14 / v5-1.49 | ❌ 无风扇 | ✅ `GPIO4_B4` | ❌ | **✅** |
+| h28k / ht2 / h66k / h68k 全系 ×5 | ❌ | ❌ | ❌ | ❌ |
+
+> ⚠️ **别取交集**。我先前误把「有风扇 **且** 有 5G 复位脚」当成一个条件，结果
+> 5G 面板只编了 5 个机型，「有复位脚但无风扇」的 **H29K 全系被漏掉**。两者互不
+> 相干：**有风扇就编风扇，有复位脚就编面板**。代码在 `tools/gen_configs.py` 的
+> `HAS_FAN` / `HAS_MODEM` 两组常量 + `FAN_ON|FAN_OFF` / `MODEM_ON|MODEM_OFF`。
+>
+> ⚠️ **判据要落到「真实节点」，不是裸关键词** —— 两个真实的误判源：
+> ht2 的 dts 里有一行**注释**「无 4G/5G LED 与 rfkill（H29K 才有）」；
+> h89k 的 dts 里有一行**注释**「风扇 = pwm14，5 档（由 dtsi 的 pwm-fan 提供）」。
+> 判据应为 `compatible = "rfkill-gpio"` 与真实 `pwm-fan` 节点。
+> 另：h88k-v2/v3、h89k 的节点都在 `rk3588-hinlink.dtsi`，只 grep 各自的 dts 会
+> 得出「都没有」的错误结论；`rk3568-hinlink-opc.dtsi`（h66k / h68k 公共）里两者皆无。
 
 **⑤ `integrate.py` 新增 `[7]`**：整目录同步 `package/beaverfffan` 进内核树
 （`rmtree` + `copytree`，保证增删改名都被同步，不会留下旧包）。
