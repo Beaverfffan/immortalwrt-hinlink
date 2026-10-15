@@ -50,6 +50,7 @@ mkdir -p "$OUT" "$LOGDIR"
 # 编译步骤里也写了同样的一句（./scripts/feeds uninstall luci-app-oled）。
 # ---------------------------------------------------------------------------
 echo "=== [0] 清理与自维护包同名的 feed 包 ==="
+_cleaned=0
 for d in "$TREE"/package/beaverfffan/*/; do
 	[ -d "$d" ] || continue
 	name=$(basename "$d")
@@ -57,8 +58,19 @@ for d in "$TREE"/package/beaverfffan/*/; do
 		[ -e "$f" ] || continue
 		rm -rf "$f"
 		echo "  已删除冲突: ${f#$TREE/}   （保留 package/beaverfffan/$name）"
+		_cleaned=1
 	done
 done
+# 换源后必须清掉包元数据缓存与旧编译产物，否则增量编译会继续复用 feed 版的
+# 产物（症状：脚本删了软链，固件里却还是旧内容）。
+if [ "$_cleaned" = 1 ]; then
+	rm -f "$TREE"/tmp/.packageinfo "$TREE"/tmp/.packagedeps
+	for name in $(ls "$TREE"/package/beaverfffan/); do
+		rm -rf "$TREE"/build_dir/target-*/"$name" "$TREE"/build_dir/target-*/"$name"-*
+		rm -f  "$TREE"/staging_dir/target-*/pkginfo/"$name".*.install
+	done
+	echo "  已清掉受影响包的元数据缓存与旧 build_dir 产物"
+fi
 
 if [ $# -gt 0 ]; then
 	LIST="$*"
