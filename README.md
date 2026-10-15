@@ -1530,6 +1530,39 @@ rpcd 不加载插件）。
 `package/beaverfffan/` 后会指到不存在的 `package/luci.mk` ⇒ 已改成
 `include $(TOPDIR)/feeds/luci/luci.mk`。
 
+★★ **2026-10-15 发现的坑：`package/beaverfffan/` 下的包会被 feed 同名包覆盖** ★★
+
+immortalwrt 官方 feeds 里**也有** `fancontrol`、`luci-app-fancontrol`、
+`luci-app-oled` 三个同名包。`./scripts/feeds install -a` 会在 `package/feeds/`
+下建出软链，而 OpenWrt 扫描 `package/` 时按**字母序**，`package/feeds/*`
+晚于 `package/beaverfffan/*` ⇒ 同名的 `Package/xxx` 定义被 feed 那份
+**静默覆盖** —— 编译不报错、包也照样进 manifest，只是**内容不是我们的**：
+
+| 被覆盖的包 | 实际装进固件的 | 本应有的 |
+|---|---|---|
+| `fancontrol` | 上游配置（`option enabled '0'`） | 我们改的 `'1'`（**默认开温控**） |
+| `luci-app-oled` | unifreq 血统版（`netsource=eth0`） | jjm2473 版（`netsource=wwan0`） |
+| `luci-app-fancontrol` | feed 版（功能等同） | 我们的（只差 include 路径） |
+
+**暴露经过**：2026-10-15 用户质疑「oled 怎么是 natelol 原版」，顺着查才发现
+**三个包全被顶掉** —— 也就是说用户在 10-14 明确要求的「风扇插件默认打开温控」
+**一直没生效**（固件里是上游的 `enabled='0'`）。
+
+**修法（已落地，两处）**：
+1. `tools/build_single.sh` 开头新增 `[0]` 步骤 —— 遍历 `package/beaverfffan/*/`，
+   把 `package/feeds/*/<同名>` 一律 `rm -rf`（**只删软链**，feeds 源目录不动）。
+2. 发行仓库 README 的编译步骤里加了
+   `./scripts/feeds uninstall fancontrol luci-app-fancontrol luci-app-oled`
+   —— 直接 `make defconfig && make` 的用户不走 `build_single.sh`，必须手工做。
+
+**以后新增自维护包时必查**（有输出 = 存在同名 feed 包，会被顶掉）：
+```sh
+for d in package/beaverfffan/*/; do
+  n=$(basename "$d"); find feeds -maxdepth 4 -type d -name "$n"
+done
+```
+当前 `aic8800` 与 `luci-app-hinlink-modem-hardreset` 在 feeds 里无同名包，安全。
+
 **③ 新增完整发行仓库 `Beaverfffan/immortalwrt-hinlink-full`**
 
 一棵**完整的 immortalwrt 源码树**（base `305089f`，排除构建产物后 88 MB）
