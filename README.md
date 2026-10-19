@@ -431,12 +431,37 @@ phy-mode = "rgmii-id"，snps,reset-delays-us = <0 20000 100000>
 | 屏驱动 | `sitronix,st7789v` | **`sitronix,gc9307`** |
 | 分辨率 | 135 宽 | **172×320** |
 | 触控 | 无 | **`chipone,axs5106` @ I2C1(0x63)** |
-| 背光 | GPIO 恒亮（gpio0_PA0） | **`pwm-backlight` 256 级（pwm3 / GPIO4_B6）** |
+| 背光 | GPIO 恒亮（gpio0_PA0） | **`pwm-backlight` 256 级（pwm6 / GPIO4_PC1）** |
 
 **背光从 GPIO 改成 PWM 是最大架构差异** —— 1.49 寸能调亮度，其他屏不能。
 
 触控：`irq = GPIO4_B2`、`reset = GPIO4_B3`、`inverted-x` + `inverted-y`（双轴反向）。
-背光：`pwms = <&pwm3 0 25000>`、`brightness-levels = 0..255`、默认亮度 153。
+背光：`pwms = <&pwm6 0 25000 1>`、`brightness-levels = 0..255`、默认亮度 153。
+
+> ★ **背光是 pwm6，不是 pwm3**（2026-10-19 从厂商 `vendor-h29k-v5-1.49.dtb` 逐项核对）：
+> `pwmpanel/panel-pwm-pin = <4 0x11 1 0x60>` → **GPIO4_PC1, func 1 = PWM6**；
+> `backlight.pwms = <0x68 0 0x61a8 1>`，`0x68 = pwm@ffa98020`。第 4 个 cell = 1
+> 表示 `PWM_POLARITY_INVERTED`（**反相**：写大亮度值反而更暗）。
+> 早期本仓库写成 `&pwm3 + pwm3m0_pins` 是错的，亮度调不动。
+
+#### 屏幕的用户态程序（2026-10-19 起随固件发布）
+
+三款 H29K 都带 `tft-display`（上游 [H29KorH69K-OPENWRT](https://github.com/ouyangzq/H29KorH69K-OPENWRT)）：
+LVGL 系统信息页，写 `/dev/fb0`，开机自启，LuCI 里有配置页（Lua CBI，所以镜像带 `luci-compat`）。
+1.49″ 触屏版另带 `kmod-input-touchscreen-axs5106`。
+
+两个 DTS 上的坑（都已修）：
+
+1. **背光节点必须挂在 `&pinctrl` 下、且不带 `reg`**。`pwm_bl.c` 用
+   `backlight_device_register(dev_name(&pdev->dev), ...)` 注册，OF 对「无 reg 的子节点」
+   用 `<父名>:<节点名>` 拼 platform device 名 ⇒ 设备名是 **`pinctrl:backlight`**，
+   而 `tft-display` 的亮度页把这个路径写死了（`src/pages/brightness_page.c` 的
+   `BACKLIGHT_DIR`）。挂到根节点下名字变成 `backlight`，亮度页立刻失效。
+2. **GPIO 中断的 `interrupt-parent` 必须是 `&gpio4`**，`interrupts` 用 bank 内编号
+   `RK_PB2`。写成 `<&gic> + RK_PB2` 是把 GPIO 编号喂给 GIC，规格不合法。
+3. 三款的 LCD 背光使能脚 `GPIO0_A0` 用 **gpio-hog 常开**。不用 `led-gpios`：
+   fbtft 只有解析到它才注册 backlight 设备，而且设备名取驱动名（`fb_st7789v` /
+   `fb_gc9307`），同样与 `pinctrl:backlight` 对不上。
 
 ### 4.6 H29K v1.3 与 v5 的实质差异
 
