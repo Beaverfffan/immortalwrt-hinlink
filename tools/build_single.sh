@@ -22,7 +22,7 @@
 # ============================================================================
 set -u
 
-TREE=$(cd "$(dirname "$0")/.." && pwd)
+TREE=${HINLINK_TREE:-$(cd "$(dirname "$0")/.." && pwd)}
 OUT=${HINLINK_OUT:-$HOME/hinlink-out}
 JOBS=${JOBS:-$(nproc)}
 LOGDIR="$OUT/_logs"
@@ -33,7 +33,7 @@ LOGDIR="$OUT/_logs"
 CFGDIR=${CFGDIR:-configs}
 mkdir -p "$OUT" "$LOGDIR"
 
-[ -f "$TREE/include/image.mk" ] || { echo "请在 immortalwrt 树根执行"; exit 1; }
+[ -f "$TREE/include/image.mk" ] || { echo "请在 x-wrt 树根执行（或设 HINLINK_TREE=/path/to/x-wrt）"; exit 1; }
 [ -d "$TREE/$CFGDIR" ] || { echo "找不到配置目录 $TREE/$CFGDIR"; exit 1; }
 
 # ---------------------------------------------------------------------------
